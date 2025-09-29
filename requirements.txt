@@ -1,0 +1,2 @@
+pytest>=8.0.0
+weaviate-client>=4.6.3
