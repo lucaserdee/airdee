@@ -1,50 +1,48 @@
+# src/airdee/config.py
 """Configuration models for the Airdee AI toolchain."""
-
 from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Optional
-
+from typing import Optional, Dict
+from urllib.parse import urlparse
 
 @dataclass
 class WeaviateSettings:
-    """Configuration required to talk to the Weaviate vector database."""
-
-    url: str
+    url: str                                # e.g. "https://<cluster>.weaviate.cloud"
     api_key: Optional[str] = None
-    collection: str = "Articles"
+    bearer: Optional[str] = None
+    collection: str = "Article"
     expected_vector_size: Optional[int] = None
     trailing_metadata: int = 0
 
-    def as_kwargs(self) -> dict[str, object]:
-        """Return keyword arguments for :func:`weaviate.connect_to_weaviate`."""
+    def _parsed(self):
+        p = urlparse(self.url)
+        return (p.hostname or self.url, p.port, p.scheme == "https")
 
-        data: dict[str, object] = {"http_host": self.url}
+    def client_kwargs(self) -> Dict[str, object]:
+        host, port, secure = self._parsed()
+        kw: Dict[str, object] = {
+            "http_host": host, "http_port": port, "http_secure": secure,
+            "grpc_host": host, "grpc_port": None, "grpc_secure": secure,
+        }
         if self.api_key:
-            data["auth_credentials"] = {"api_key": self.api_key}
-        return data
+            from weaviate.classes.init import Auth
+            kw["auth_credentials"] = Auth.api_key(self.api_key)
+        return kw
 
-    def headers(self) -> dict[str, str]:
-        """Return HTTP headers for direct REST calls to Weaviate."""
-
-        if not self.api_key:
-            return {}
-        return {"X-API-Key": self.api_key}
-
+    def headers(self) -> Dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        if self.bearer:
+            h["Authorization"] = f"Bearer {self.bearer}"
+        elif self.api_key:
+            h["X-API-KEY"] = self.api_key
+        return h
 
 @dataclass
 class AzureOpenAISettings:
-    """Azure OpenAI configuration used by the article answering agent."""
-
     endpoint: str
     deployment: str
     api_key: str
     api_version: str = "2024-02-01"
 
-    def headers(self) -> dict[str, str]:
-        """Return the HTTP headers required for Azure OpenAI requests."""
-
-        return {
-            "api-key": self.api_key,
-            "Content-Type": "application/json",
-        }
+    def headers(self) -> Dict[str, str]:
+        return {"api-key": self.api_key, "Content-Type": "application/json"}

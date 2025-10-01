@@ -1,150 +1,161 @@
-"""Utilities for interacting with the Weaviate vector database."""
-
 from __future__ import annotations
-
-import logging
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Dict, List, Optional, Literal
 
-from .config import WeaviateSettings
+import weaviate
+from weaviate.classes.query import Filter as WvFilter, Sort as WvSort
 
-LOGGER = logging.getLogger(__name__)
 
-
-@dataclass(slots=True)
-class ArticleDocument:
-    """Container for an article retrieved from Weaviate."""
-
-    uuid: str
-    title: str
-    body: str
-    vector: Sequence[float]
+@dataclass
+class SortSpec:
+    path: str
+    order: Literal["asc", "desc"] = "desc"
 
 
 class WeaviateRetriever:
-    """High level helper to fetch article content and vectors from Weaviate."""
+    """
+    Weaviate v4 retriever using Collections API.
+    """
 
-    def __init__(
+    def __init__(self, client: weaviate.WeaviateClient) -> None:
+        self.client = client
+
+    def search(
         self,
-        client: Any,
-        settings: WeaviateSettings,
-        vector_property: str = "te_3_large",
-    ) -> None:
-        self._client = client
-        self._settings = settings
-        self._vector_property = vector_property
-
-    def get_article(self, article_uuid: str) -> ArticleDocument:
-        """Return an :class:`ArticleDocument` for ``article_uuid``.
-
-        The method normalises the stored vector by trimming metadata the
-        importer appended to the tail of the vector.  The amount of metadata to
-        remove can be configured with ``settings.trailing_metadata``.  If the
-        ``settings.expected_vector_size`` is defined and the fetched vector does
-        not match the expectation an informative :class:`ValueError` is raised.
+        class_name: str,
+        *,
+        fulltext: Optional[str] = None,          # reserved for later (bm25)
+        filters: Optional[Dict[str, Any]] = None,
+        sort: Optional[List[SortSpec] | List[Dict[str, Any]] | Dict[str, Any] | SortSpec] = None,
+        limit: int = 5,
+        select: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """
+        Query a class and return list of dicts (properties + _meta.id).
+        """
+        props = select or ["rdId", "title", "lead", "body", "publishedAt", "source", "tags", "mainCategory"]
+        col = self.client.collections.get(class_name)
 
-        collection = self._get_collection(self._settings.collection)
-        response = collection.query.fetch_object_by_id(
-            article_uuid,
-            include_vector=True,
-        )
-        if response is None:
-            msg = f"Article with UUID {article_uuid!r} was not found."
-            LOGGER.error(msg)
-            raise LookupError(msg)
+        wv_where = self._filters_to_where(filters)
+        wv_sort  = self._sort_to_v4(sort)
 
-        properties = self._extract_properties(response)
-        vector = self._extract_vector(response)
-        normalised = self._normalise_vector(vector)
-
-        return ArticleDocument(
-            uuid=article_uuid,
-            title=str(properties.get("title", "")),
-            body=str(properties.get("body", "")),
-            vector=normalised,
+        # If you add BM25 later, switch to col.query.bm25(...). For now, plain fetch:
+        result = col.query.fetch_objects(
+            limit=limit,
+            return_properties=props,
+            filters=wv_where,
+            sort=wv_sort,  # v4 expects a single _Sorting or None
         )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-    def _get_collection(self, name: str) -> Any:
-        """Return the collection handle from the client, raising on failure."""
+        items: List[Dict[str, Any]] = []
+        for obj in (getattr(result, "objects", []) or []):
+            data = dict(obj.properties or {})
+            data["_meta"] = {"id": str(obj.uuid)}
+            items.append(data)
+        return items
 
-        if not hasattr(self._client, "collections"):
-            msg = "Weaviate client does not expose a 'collections' attribute."
-            raise AttributeError(msg)
-        return self._client.collections.get(name)
+    # ----------------- helpers -----------------
 
-    @staticmethod
-    def _extract_properties(response: Mapping[str, Any]) -> Mapping[str, Any]:
-        """Return the ``properties`` section of the fetch response."""
+    def _sort_to_v4(
+        self,
+        sort: Optional[List[SortSpec] | List[Dict[str, Any]] | Dict[str, Any] | SortSpec]
+    ):
+        """
+        Convert incoming sort (often a list) into a single v4 _Sorting.
+        v4 public API accepts one _Sorting object; if multiple provided, we take the first.
+        """
+        if not sort:
+            return None
 
-        properties = response.get("properties")
-        if not isinstance(properties, Mapping):
-            msg = "Response does not contain a property map."
-            raise TypeError(msg)
-        return properties
+        # Normalize to one item
+        first = sort[0] if isinstance(sort, list) else sort
 
-    def _extract_vector(self, response: Mapping[str, Any]) -> Sequence[float]:
-        """Return the vector associated with ``self._vector_property``."""
+        if isinstance(first, dict):
+            path = first.get("path")
+            order = (first.get("order") or "desc").lower()
+        else:
+            path = getattr(first, "path", None)
+            order = getattr(first, "order", "desc").lower()
 
-        vector_maps: list[Mapping[str, Any]] = []
+        if not path:
+            return None
 
-        direct = response.get("vector")
-        if isinstance(direct, Mapping):
-            vector_maps.append(direct)
+        return WvSort.by_property(path, ascending=(order == "asc"))
 
-        vectors = response.get("vectors")
-        if isinstance(vectors, Mapping):
-            vector_maps.append(vectors)
+    def _filters_to_where(self, filters: Optional[Dict[str, Any]]) -> Optional[WvFilter]:
+        """
+        Build a v4 Filter tree.
 
-        additional = response.get("additional")
-        if isinstance(additional, Mapping):
-            additional_vector = additional.get("vector")
-            if isinstance(additional_vector, Mapping):
-                vector_maps.append(additional_vector)
+        Supports either:
+          A) Per-field style (AND across fields):
+             {
+               "publishedAt": {"gte": "2024-01-01T00:00:00Z", "lte": "2024-12-31T23:59:59Z"},
+               "isLiveblog": false
+             }
 
-        for mapping in vector_maps:
-            data = mapping.get(self._vector_property)
-            if isinstance(data, Iterable):
-                return list(float(v) for v in data)  # type: ignore[arg-type]
+          B) Explicit single-clause style:
+             {
+               "path": "publishedAt",
+               "operator": "GreaterThanEqual",
+               "value": "2024-06-01T00:00:00Z"
+             }
+        """
+        if not filters:
+            return None
 
-        msg = f"Vector property {self._vector_property!r} is missing."
-        raise KeyError(msg)
+        # If explicit single-clause style detected
+        if "path" in filters and "operator" in filters:
+            return self._single_clause(filters["path"], filters["operator"], filters.get("value"))
 
-    def _normalise_vector(self, vector: Sequence[float]) -> Sequence[float]:
-        """Trim trailing metadata and validate the vector length."""
+        # Otherwise assume per-field dict; combine all with AND
+        clauses: List[WvFilter] = []
+        for field, value in filters.items():
+            if isinstance(value, dict):
+                # multiple ops on same field AND-ed
+                sub: Optional[WvFilter] = None
+                for op, v in value.items():
+                    c = self._apply_op(field, op, v)
+                    sub = c if sub is None else (sub & c)
+                if sub is not None:
+                    clauses.append(sub)
+            else:
+                # equality by default
+                clauses.append(WvFilter.by_property(field).equal(value))
 
-        expected = self._settings.expected_vector_size
-        trailing = self._settings.trailing_metadata
-        trimmed = list(vector)
-        if trailing:
-            if len(trimmed) <= trailing:
-                msg = (
-                    "Vector bevat minder waarden (%s) dan het aantal "
-                    "te verwijderen metadata (%s)."
-                    % (len(trimmed), trailing)
-                )
-                LOGGER.error(msg)
-                raise ValueError(msg)
-            trimmed = trimmed[:-trailing]
+        if not clauses:
+            return None
 
-        if expected is None:
-            return trimmed
+        expr = clauses[0]
+        for c in clauses[1:]:
+            expr = expr & c
+        return expr
 
-        if len(trimmed) == expected:
-            return trimmed
+    def _single_clause(self, path: str, operator: str, value: Any) -> WvFilter:
+        """Map one explicit operator clause to a v4 Filter."""
+        f = WvFilter.by_property(path)
+        op = operator.strip().lower()
 
-        if len(vector) == expected:
-            return list(vector)
+        # Accept common spellings/cases
+        if op in ("equal", "eq"):                      return f.equal(value)
+        if op in ("notequal", "neq"):                  return f.not_equal(value)
+        if op in ("greaterthan", "gt"):                return f.greater_than(value)
+        if op in ("greaterthanequal", "gte", "ge"):    return f.greater_or_equal(value)
+        if op in ("lessthan", "lt"):                   return f.less_than(value)
+        if op in ("lessthanequal", "lte", "le"):       return f.less_or_equal(value)
+        if op in ("like",):                            return f.like(str(value))
 
-        msg = (
-            "Vector length mismatch: expected %s values but received %s."
-            % (expected, len(vector))
-        )
-        LOGGER.error(msg)
-        raise ValueError(msg)
+        raise ValueError(f"Unsupported operator: {operator}")
 
-
-__all__ = ["WeaviateRetriever", "ArticleDocument"]
+    def _apply_op(self, field: str, op_key: str, value: Any) -> WvFilter:
+        """Handle compact per-field ops like {'gte': ..., 'lte': ...}."""
+        f = WvFilter.by_property(field)
+        k = op_key.strip().lower()
+        if k == "eq":   return f.equal(value)
+        if k == "neq":  return f.not_equal(value)
+        if k == "gt":   return f.greater_than(value)
+        if k == "gte":  return f.greater_or_equal(value)
+        if k == "lt":   return f.less_than(value)
+        if k == "lte":  return f.less_or_equal(value)
+        if k == "like": return f.like(str(value))
+        # default to equality to be forgiving
+        return f.equal(value)

@@ -13,3 +13,4 @@ __pycache__/
 
 # --- Docker/Compose (lokale volumes/bestanden) ---
 docker-data/
+docker-compose.yml
