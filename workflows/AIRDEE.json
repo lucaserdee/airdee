@@ -1,0 +1,283 @@
+{
+  "name": "AIRDEE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-chatbot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a890e71c-d6db-4dbf-ae1d-49efeaca00bd",
+      "name": "Chat UI webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        160,
+        272
+      ],
+      "webhookId": "0e361650-fbdc-493a-82ea-1081b0fc552b"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// --- Simple UTC helpers ---\nconst MS_DAY = 86_400_000;\nconst toIsoUtc = (d) => new Date(d.getTime()).toISOString();\nconst startOfDayUTC = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));\nconst addDaysUTC = (d, n) => new Date(d.getTime() + n * MS_DAY);\nconst startOfMonthUTC = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));\nconst startOfYearUTC = (d) => new Date(Date.UTC(d.getUTCFullYear(), 0, 1));\n\nconst MONTHS = {\n  januari: 0, februari: 1, maart: 2, april: 3, mei: 4, juni: 5,\n  juli: 6, augustus: 7, september: 8, oktober: 9, november: 10, december: 11,\n};\n\n// --- Helper: parse losse datumstrings (\"1-10\", \"1 okt\", etc.) ---\nfunction parseLooseDate(s, defaultYear) {\n  s = s.trim().toLowerCase();\n\n  // dd-mm(-yyyy) | dd/mm(/yyyy)\n  let m = s.match(/^(\\d{1,2})[.\\-/ ](\\d{1,2})(?:[.\\-/ ](\\d{2,4}))?$/);\n  if (m) {\n    const d = +m[1], mo = +m[2], y = m[3] ? +m[3] : defaultYear;\n    return new Date(Date.UTC(y < 100 ? 2000 + y : y, mo - 1, d));\n  }\n\n  // dd <maand> (yyyy)\n  m = s.match(/^(\\d{1,2})[ ]([a-z]+)\\.?(?:[ ](\\d{2,4}))?$/i);\n  if (m) {\n    const d = +m[1];\n    const monName = m[2].replace(/\\.$/, '');\n    const mo = MONTHS[monName];\n    if (mo !== undefined) {\n      const y = m[3] ? +m[3] : defaultYear;\n      return new Date(Date.UTC(y < 100 ? 2000 + y : y, mo, d));\n    }\n  }\n\n  // ISO fallback\n  const iso = new Date(s);\n  if (!isNaN(iso.getTime())) {\n    return new Date(Date.UTC(iso.getUTCFullYear(), iso.getUTCMonth(), iso.getUTCDate()));\n  }\n  return null;\n}\n\n// --- Tijdsparser (NL + regex) ---\nfunction parseTimeRange(input) {\n  if (!input) return { fromISO: null, toISO: null, label: null };\n\n  const s = String(input).trim().toLowerCase();\n  const now = new Date();\n  const today = startOfDayUTC(now);\n  const tomorrow = addDaysUTC(today, 1);\n\n  // Vandaag / Gisteren / Eergisteren\n  if (/\\bvandaag\\b/.test(s))     return { fromISO: toIsoUtc(today), toISO: toIsoUtc(tomorrow), label: \"vandaag\" };\n  if (/\\bgisteren\\b/.test(s))    return { fromISO: toIsoUtc(addDaysUTC(today, -1)), toISO: toIsoUtc(today), label: \"gisteren\" };\n  if (/\\beergisteren\\b/.test(s)) return { fromISO: toIsoUtc(addDaysUTC(today, -2)), toISO: toIsoUtc(addDaysUTC(today, -1)), label: \"eergisteren\" };\n\n  // Afgelopen twee weken\n  if (/(afgelopen|laatste)\\s*(twee|2)\\s*weken?\\b/.test(s)) {\n    return { fromISO: toIsoUtc(addDaysUTC(today, -14)), toISO: toIsoUtc(tomorrow), label: \"afgelopen twee weken\" };\n  }\n\n  // Afgelopen N dagen/weken/maanden/jaar\n  let m = s.match(/(afgelopen|laatste)\\s*(\\d{1,3})\\s*(dagen?|weken?|maanden?|jaar)\\b/);\n  if (m) {\n    const n = +m[2];\n    const unit = m[3];\n    let from = today;\n    if (/dag/.test(unit)) from = addDaysUTC(today, -n);\n    else if (/week/.test(unit)) from = addDaysUTC(today, -7 * n);\n    else if (/maand/.test(unit)) from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - n, 1));\n    else if (/jaar/.test(unit))  from = new Date(Date.UTC(now.getUTCFullYear() - n, now.getUTCMonth(), 1));\n    return { fromISO: toIsoUtc(from), toISO: toIsoUtc(tomorrow), label: `afgelopen ${n} ${unit}` };\n  }\n\n  // Week, maand, jaar presets\n  if (/\\bvorige week\\b/.test(s) || /\\bafgelopen week\\b/.test(s)) {\n    const weekday = today.getUTCDay();\n    const startThisWeek = addDaysUTC(today, -((weekday + 6) % 7));\n    const startPrevWeek = addDaysUTC(startThisWeek, -7);\n    return { fromISO: toIsoUtc(startPrevWeek), toISO: toIsoUtc(startThisWeek), label: \"vorige week\" };\n  }\n\n  if (/\\bdeze week\\b/.test(s)) {\n    const weekday = today.getUTCDay();\n    const startThisWeek = addDaysUTC(today, -((weekday + 6) % 7));\n    return { fromISO: toIsoUtc(startThisWeek), toISO: toIsoUtc(tomorrow), label: \"deze week\" };\n  }\n\n  if (/\\bvorige maand\\b/.test(s) || /\\bafgelopen maand\\b/.test(s)) {\n    const firstThis = startOfMonthUTC(now);\n    const firstPrev = new Date(Date.UTC(firstThis.getUTCFullYear(), firstThis.getUTCMonth() - 1, 1));\n    return { fromISO: toIsoUtc(firstPrev), toISO: toIsoUtc(firstThis), label: \"vorige maand\" };\n  }\n\n  if (/\\bdeze maand\\b/.test(s)) {\n    const firstThis = startOfMonthUTC(now);\n    return { fromISO: toIsoUtc(firstThis), toISO: toIsoUtc(tomorrow), label: \"deze maand\" };\n  }\n\n  if (/\\bvorig jaar\\b/.test(s) || /\\bafgelopen jaar\\b/.test(s)) {\n    const firstThisYear = startOfYearUTC(now);\n    const firstPrevYear = new Date(Date.UTC(firstThisYear.getUTCFullYear() - 1, 0, 1));\n    return { fromISO: toIsoUtc(firstPrevYear), toISO: toIsoUtc(firstThisYear), label: \"vorig jaar\" };\n  }\n\n  if (/\\bdit jaar\\b/.test(s)) {\n    const firstThisYear = startOfYearUTC(now);\n    return { fromISO: toIsoUtc(firstThisYear), toISO: toIsoUtc(tomorrow), label: \"dit jaar\" };\n  }\n\n  // T/M of tussen bereik\n  m = s.match(/(.+?)\\s*t\\/m\\s*(.+)$/i);\n  if (m) {\n    const a = parseLooseDate(m[1], now.getUTCFullYear());\n    const b = parseLooseDate(m[2], now.getUTCFullYear());\n    if (a && b) return { fromISO: toIsoUtc(a), toISO: toIsoUtc(addDaysUTC(b, 1)), label: \"custom range\" };\n  }\n\n  m = s.match(/tussen\\s+(.+?)\\s+en\\s+(.+)$/i);\n  if (m) {\n    const a = parseLooseDate(m[1], now.getUTCFullYear());\n    const b = parseLooseDate(m[2], now.getUTCFullYear());\n    if (a && b) return { fromISO: toIsoUtc(a), toISO: toIsoUtc(addDaysUTC(b, 1)), label: \"custom range\" };\n  }\n\n  // Op specifieke dag\n  m = s.match(/\\bop\\s+(.+)$/i);\n  if (m) {\n    const d = parseLooseDate(m[1], now.getUTCFullYear());\n    if (d) return { fromISO: toIsoUtc(d), toISO: toIsoUtc(addDaysUTC(d, 1)), label: \"op dag\" };\n  }\n\n  return { fromISO: null, toISO: null, label: null };\n}\n\n// --- Node uitvoering ---\nconst body = $json.body ?? {};\nconst question = String(body.question ?? '').trim();\nif (!question) throw new Error(\"question ontbreekt in de request payload.\");\n\n// 1️⃣ Tijdsvak ophalen (expliciet of uit de vraag)\nconst explicitTR = body.timeRange ?? body.daterange ?? body.range ?? null;\nlet parsed = parseTimeRange(explicitTR);\nif (!parsed.fromISO && !parsed.toISO) {\n  parsed = parseTimeRange(question);\n}\nconst { fromISO, toISO, label } = parsed;\n\n// 2️⃣ Intentie \"nieuwste/laatste/recentste\"\nconst q = question.toLowerCase();\nconst forceNewest = /\\b(nieuwste|laatste|recentste)\\b/.test(q);\n\n// 3️⃣ Output voor subworkflow\nreturn {\n  question,\n  fromISO,\n  toISO,\n  _timeRangeParsed: label,\n  forceNewest,   // voor pure sort query in subflow\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        272
+      ],
+      "id": "3a92920a-97ac-4332-9ffe-6b162b681f91",
+      "name": "Validate Request"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4.1",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAzureOpenAi",
+      "typeVersion": 1,
+      "position": [
+        608,
+        448
+      ],
+      "id": "ff241851-8635-4c46-bfba-09dbaec51efb",
+      "name": "Azure OpenAI Chat Model",
+      "credentials": {
+        "azureOpenAiApi": {
+          "id": "r53g3Mv4leJjmPvW",
+          "name": "Azure Open AI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.question }}",
+        "options": {
+          "systemMessage": "Rol\nJe bent een interne EMG-assistent. Je antwoordt uitsluitend op basis van toolresultaten; gebruik geen externe kennis.\n\nBeschikbare tools\n\nJe kunt de tool 'search_articles' gebruiken om relevante artikelen uit onze Weaviate vectordatabase op te halen.\nVoordat je inhoudelijke vragen beantwoordt, roep je 'search_articles' aan met { query: <het bericht van de gebruiker>, topK: 3 }.\nGebruik de geretourneerde titels, lead en body als context. Als er niets wordt gevonden, geef dat dan aan.\nGeef de voorkeur aan de hoogst gerangschikte resultaten (laagste afstand). Verzin geen artikelinformatie die niet door de tool wordt geretourneerd."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        272
+      ],
+      "id": "750febc4-542e-4d7f-99d8-738864a49ea4",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1024,
+        272
+      ],
+      "id": "cab56960-5bc3-432d-88ca-06f62f84f998",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "description": "\"Als een gebruiker een vraag stelt, embed je deze en haal je de top-K dichtstbijzijnde krantenartikelen op uit Weaviate. Retourneert rang, rdId, titel en afstand.\"",
+        "workflowId": {
+          "__rl": true,
+          "value": "13IhSMkzb9YUf0PP",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/13IhSMkzb9YUf0PP",
+          "cachedResultName": "Sub workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "query": "={{ $json.question }}",
+            "fromISO": "={{ $json.fromISO }}",
+            "toISO": "={{ $json.toISO }}",
+            "forceNewest": "={{ $json.forceNewest }}"
+          },
+          "matchingColumns": [
+            "query"
+          ],
+          "schema": [
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "fromISO",
+              "displayName": "fromISO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "toISO",
+              "displayName": "toISO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "forceNewest",
+              "displayName": "forceNewest",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        912,
+        448
+      ],
+      "id": "8efcd1ca-d5dc-4861-85fd-1ec60c821d67",
+      "name": "search_articles"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        752,
+        448
+      ],
+      "id": "b21f7b12-c4a3-44df-a6a1-dbc318faace7",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code node — Run Once for Each Item\nconst body    = $json.body    ?? {};\nconst headers = $json.headers ?? {};\nconst cookies = $json.cookies ?? {};\n\n// 1) Probeer inkomende waarden\nlet sessionId =\n  body.sessionId ||\n  headers['x-session-id'] ||\n  headers['x-sessionid'] ||\n  cookies.sid ||\n  cookies.session ||\n  null;\n\n// 2) Indien leeg: maak een stabiele fallback (hash van IP+UA+userId/dag)\nif (!sessionId) {\n  const ua = headers['user-agent'] || '';\n  const ip = (headers['x-forwarded-for'] || '').split(',')[0].trim();\n  const userId = body.userId || '';\n  const day = new Date().toISOString().slice(0,10); // optioneel: per dag uniek\n\n  const seed = `${ua}|${ip}|${userId}|${day}`;\n  function cheapHash(s){\n    let h = 0;\n    for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; }\n    return `sess_${Math.abs(h)}`;\n  }\n  sessionId = cheapHash(seed);\n}\n\nreturn {\n  ...$json,\n  sessionId,        // <— dit veld gaan we gebruiken in de Memory node\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        272
+      ],
+      "id": "e3b8e1b4-c3a1-4bd3-aca3-179465e57334",
+      "name": "Add SessionID"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Chat UI webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Add SessionID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_articles": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add SessionID": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "eee3d005-dd4c-477e-a363-e77bcf9bc969",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3d6c34d8f4384ca25fa01e0f923a6457166bf650c040640922e8f719be8d8641"
+  },
+  "id": "ouh1AgfENaD3z84P",
+  "tags": []
+}
