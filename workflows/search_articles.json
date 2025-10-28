@@ -1,0 +1,274 @@
+{
+  "name": "search_articles",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query"
+            },
+            {
+              "name": "fromISO"
+            },
+            {
+              "name": "toISO"
+            },
+            {
+              "name": "forceNewest"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        48
+      ],
+      "id": "e6162dd5-c519-4b04-a4d8-69ac7ee70c42",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://welz4ghqqeynlanof5qemg.c0.europe-west3.gcp.weaviate.cloud/v1/graphql",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ (() => {\n  // ===== Inputs uit subflow =====\n  const fromISO = $json.fromISO || null;\n  const toISO   = $json.toISO   || null;\n  const qRaw    = String($json.query ?? '').replace(/\"/g, '\\\\\"'); // escape quotes\n  const topK    = Number($json.topK ?? 50); // wat ruimer bij hybrid\n  const alpha   = Number($json.alpha ?? 0.6); // 0=dense-only, 1=sparse-only\n\n  // ===== WHERE-builder =====\n  function buildWhere(fromISO, toISO) {\n    const ops = [];\n    if (fromISO) ops.push(`{ path: [\"publishedAt\"], operator: GreaterThanEqual, valueDate: \"${fromISO}\" }`);\n    if (toISO)   ops.push(`{ path: [\"publishedAt\"], operator: LessThan,        valueDate: \"${toISO}\" }`);\n    return ops.length ? `\n      where: {\n        operator: And\n        operands: [ ${ops.join(', ')} ]\n      }` : '';\n  }\n  const whereClause = buildWhere(fromISO, toISO);\n\n  // ===== Vector voorbereiden (optioneel) =====\n  const raw = Array.isArray($json.vector) ? $json.vector : [];\n  const vecArr = raw.filter(v => Number.isFinite(Number(v)));\n  const vector = vecArr.length ? vecArr.map(v => Number(v).toFixed(8)).join(',') : '';\n  const vectorPart = vector ? `vector: [${vector}]` : ''; // optioneel\n\n  // ===== HYBRID-query =====\n  return `\n  {\n    Get {\n      Article(\n        hybrid: {\n          query: \"${qRaw}\"\n          alpha: ${alpha}\n          ${vectorPart}\n          targetVectors: [\"te_3_large\"]\n          properties: [\"title\",\"lead\",\"body\"]\n        }\n        ${whereClause}\n        limit: ${topK}\n      ) {\n        rdId\n        publishedAt\n        title\n        lead\n        _additional { id score distance }\n      }\n    }\n  }`;\n})() }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        48
+      ],
+      "id": "10ddf51e-aee1-42a3-b368-d36c10cc81df",
+      "name": "Weaviate Search",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "RJFpp0Wn31lAz0zR",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// === Format Output — strikte tijdsfilter + robuuste linkconstructie ===\n\n// 1️⃣ Ophalen & sanity-check\nconst raw = $json?.data?.Get?.Article ?? [];\nif (!Array.isArray(raw) || !raw.length) {\n  return { results: [], note: 'Geen artikelen gevonden' };\n}\n\n// 2️⃣ Parameters\nconst fromISO = $json.fromISO ?? null;\nconst toISO   = $json.toISO   ?? null;\nconst hasRange = !!(fromISO || toISO);\n\nconst THRESH = hasRange ? 0.9 : 0.7;\n\nconst fromMs = fromISO ? new Date(fromISO).getTime() : -Infinity;\nconst toMs   = toISO   ? new Date(toISO).getTime()   :  Infinity;\n\n// 3️⃣ Filter op distance (relevantie)\nconst prelim = raw.filter(o => (o._additional?.distance ?? 1) < THRESH);\nconst used0  = prelim.length ? prelim : raw;\n\n// 4️⃣ Filter op tijdsrange (defensief en strikt)\nconst used1 = used0.filter(o => {\n  const t = new Date(o.publishedAt).getTime();\n  return Number.isFinite(t) && t >= fromMs && t < toMs;\n});\n\n// 5️⃣ Alleen in-range meenemen als range opgegeven is\nconst used = hasRange ? used1 : used0;\n\n// 6️⃣ Sorteer nieuw → oud\nused.sort((a, b) => (new Date(b.publishedAt).getTime() || 0) - (new Date(a.publishedAt).getTime() || 0));\n\n// 7️⃣ Helper: robuuste RD-link\nfunction buildRdLink(o) {\n  const base = 'https://www.rd.nl';\n  const norm = s => s.replace(/\\/+/g, '/').replace(':/', '://');\n\n  if (o.url && /^https?:\\/\\//i.test(o.url)) return o.url; // directe URL\n  if (o.slug && typeof o.slug === 'string') {\n    const s = o.slug.replace(/^\\/+/, '');\n    if (/^artikel\\//i.test(s)) return `${base}/${norm(s)}`;\n    return `${base}/${norm('artikel/' + s)}`;\n  }\n  if (o.rdId) return `${base}/${norm('artikel/' + String(o.rdId))}`;\n  return null;\n}\n\n// 8️⃣ Hulpfunctie om NL-datum te bekijken\nfunction toAmsISO(isoStr) {\n  if (!isoStr) return null;\n  try {\n    const ams = new Date(new Date(isoStr).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));\n    return ams.toISOString();\n  } catch {\n    return null;\n  }\n}\n\n// 9️⃣ Map resultaat\nconst results = used.map(o => {\n  const pub = new Date(o.publishedAt);\n  const pubMs = pub.getTime();\n  const inRange = hasRange ? (pubMs >= fromMs && pubMs < toMs) : true;\n\n  return {\n    rdId: o.rdId ?? null,\n    title: o.title,\n    publishedAt: o.publishedAt,\n    publishedAt_ams: toAmsISO(o.publishedAt),\n    lead: o.lead,\n    body: o.body,\n    distance: o._additional?.distance ?? null,\n    link: buildRdLink(o),\n    in_range: inRange\n  };\n});\n\n// 10️⃣ Teruggeven\nreturn {\n  results,\n  count: results.length,\n  distance_threshold: THRESH,\n  applied_fromISO: fromISO,\n  applied_toISO: toISO,\n  strict_range: hasRange\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        48
+      ],
+      "id": "c39ab188-a45e-47b7-bd8f-65eef42474e9",
+      "name": "Format Output"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://azureopenaiemg.openai.azure.com/openai/deployments/EMG_text-embedding-3-large/embeddings?api-version=2023-05-15",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "azureOpenAiApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "=={{ (() => {\n  const raw = String($json.query ?? '').trim().replace(/\\\\s+/g,' ');\n  const q    = raw.length ? raw : 'algemeen onderwerp';\n  const qSafe = q.replace(/\\\"/g, '\\\\\\\"');\n\n  const fromISO = $json.fromISO ?? null;\n  const toISO   = $json.toISO   ?? null;\n  const forceNewest = ($json.forceNewest === true) || String($json.forceNewest).toLowerCase() === 'true';\n\n  let tijd = '';\n  if (fromISO && toISO) tijd = `verschenen tussen ${fromISO} en ${toISO} (einddatum exclusief)`;\n  else if (fromISO)      tijd = `verschenen op of na ${fromISO}`;\n  else if (toISO)        tijd = `verschenen vóór ${toISO}`;\n  else if (forceNewest)  tijd = `met nadruk op de meest recent verschenen artikelen`;\n\n  const tijdZin = tijd ? ` Beperk tot artikelen ${tijd}.` : '';\n\n  return `Artikelen over \"${qSafe}\" uit het archief van Reformatorisch Dagblad (Erdee Media Groep). Focus op nieuws, achtergronden en analyses die inhoudelijk sterk overeenkomen met het onderwerp.${tijdZin} Gebruik titel en hoofdtekst als semantische context.`;\n})() }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        -80
+      ],
+      "id": "571ca1d7-bd76-452c-9f18-1654b1e7c901",
+      "name": "Azure HTTP Request",
+      "credentials": {
+        "azureOpenAiApi": {
+          "id": "Utv9lWu6uFRSz7FH",
+          "name": "Azure Open AI account embedding"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// publication-date encoding — Run Once for Each Item\n\nfunction getAgeVector(publishedAtISO, ageWeight = 1.0) {\n  const oneDayMs = 86_400_000;\n  const referenceDate = new Date(Date.UTC(2023, 7, 10)); // 10 Aug 2023 UTC\n\n  const publishedAt = new Date(publishedAtISO);\n  if (isNaN(publishedAt.getTime())) return { vec: [0.0, 0.0], anchorUsed: null };\n\n  const halfSpanDays = 5 * 365;\n  const minDate = new Date(referenceDate.getTime() - halfSpanDays * oneDayMs);\n  const maxDate = new Date(referenceDate.getTime() + halfSpanDays * oneDayMs);\n\n  const matchDate = publishedAt;\n  if (matchDate < minDate) return { vec: [0.0, -1.0], anchorUsed: matchDate.toISOString() };\n  if (matchDate > maxDate) return { vec: [0.0,  1.0], anchorUsed: matchDate.toISOString() };\n\n  const diffDaysInt = Math.floor((matchDate.getTime() - referenceDate.getTime()) / oneDayMs);\n  const theta = (diffDaysInt * Math.PI) / (10 * 365);\n\n  const w = Number(ageWeight);\n  const x = Number(Math.cos(theta).toFixed(8)) * w;\n  const y = Number(Math.sin(theta).toFixed(8)) * w;\n\n  return { vec: [x, y], anchorUsed: matchDate.toISOString() };\n}\n\nfunction pickAnchorISO(fromISO, toISO) {\n  const oneDayMs = 86_400_000;\n\n  const from = fromISO ? new Date(fromISO) : null;\n  const to   = toISO   ? new Date(toISO)   : null;\n\n  const fromOk = !!from && !Number.isNaN(from.getTime());\n  const toOk   = !!to   && !Number.isNaN(to.getTime());\n\n  if (fromOk && toOk) {\n    // midden van het venster\n    return new Date((from.getTime() + to.getTime()) / 2).toISOString();\n  }\n  if (toOk) {\n    // exclusieve bovenkant → één dag terug\n    return new Date(to.getTime() - oneDayMs).toISOString();\n  }\n  if (fromOk) {\n    // alleen from: anker = from\n    return new Date(from.getTime()).toISOString();\n  }\n  // fallback: nu\n  return new Date().toISOString();\n}\n\n\nconst baseVector = Array.isArray($json.vector) ? $json.vector : [];\nconst useAge     = ($json.use_age ?? true) === true;\nconst ageWeight  = Number($json.age_weight ?? 2.0);\n\nconst fromISO = $json.fromISO ?? null;\nconst toISO   = $json.toISO   ?? null;\n\nconst anchorISO = pickAnchorISO(fromISO, toISO);\nconst age = useAge ? getAgeVector(anchorISO, ageWeight) : { vec: [0.0, 0.0], anchorUsed: null };\n\nconst finalVector = baseVector.concat(age.vec);\n\nreturn {\n  vector: finalVector,\n  topK: Number($json.topK ?? 3),\n  age_anchor_used: age.anchorUsed ?? anchorISO,\n  age_weight_used: ageWeight,\n  fromISO,\n  toISO,\n  anchorISO,\n  _debug: { fromISO, toISO, anchorISO, baseLen: baseVector.length, finalLen: finalVector.length }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        48
+      ],
+      "id": "c3e11541-3c1d-4141-a6b1-f318540ee8f0",
+      "name": "publication-date encoding"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "823645ce-3e4c-46a2-8681-f6a498e150d3",
+              "name": "vector",
+              "value": "={{$json.data[0].embedding}}",
+              "type": "array"
+            },
+            {
+              "id": "13c20a2f-d40b-47c5-a044-6aef4dccb4e1",
+              "name": "topK",
+              "value": "={{ $json.fromISO || $json.toISO ? 50 : 3 }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        -80
+      ],
+      "id": "e6320cc5-7220-4ee2-9e4d-9a7445dd68a9",
+      "name": "Pick Vector"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        672,
+        48
+      ],
+      "id": "905444c7-1018-4bb4-82bf-fcfa9c3309d9",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Azure HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Weaviate Search": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Pick Vector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "publication-date encoding": {
+      "main": [
+        [
+          {
+            "node": "Weaviate Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Vector": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "publication-date encoding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "080586d5-e098-470c-b3fa-0b1aa9b43717",
+  "meta": {
+    "instanceId": "3d6c34d8f4384ca25fa01e0f923a6457166bf650c040640922e8f719be8d8641"
+  },
+  "id": "13IhSMkzb9YUf0PP",
+  "tags": []
+}
