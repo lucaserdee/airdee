@@ -204,11 +204,41 @@
       const form = document.getElementById('chat-form');
       const log  = document.getElementById('chat-log');
       const statusEl = document.getElementById('status');
+      
+      function escapeHtml(s){
+        return s
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+    
+      // Zet Markdown-links en kale URLs om naar <a>…</a>, behoudt verder veiligheid.
+      function renderTextAsHtml(text){
+        let html = escapeHtml(String(text ?? ''));
+      
+        // 1) Markdown links: [titel](https://...)
+        html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+          '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      
+        // 2) Kale URLs autolinken (geen onderdeel van een attribuut/quote)
+        html = html.replace(/(^|[\s(])((https?:\/\/[^\s<)]+))/g,
+          '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+      
+        // 3) Code-fences ```...``` → <pre><code>...</code></pre>
+        html = html.replace(/```([\s\S]*?)```/g,
+          (m, code) => `<pre><code>${code}</code></pre>`);
+      
+        // 4) Regels behouden
+        html = html.replace(/\n/g, '<br>');
+      
+        return html;
+      }
 
       function addMessage(role, content){
         const a = document.createElement('article'); a.className = `message ${role}`;
         const r = document.createElement('span'); r.className = 'role'; r.textContent = role==='user'?'Vraag':'Antwoord';
-        const b = document.createElement('div');  b.className = 'bubble'; b.textContent = content;
+        const b = document.createElement('div');  b.className = 'bubble';
+        b.innerHTML = renderTextAsHtml(content);
         a.append(r,b); log.append(a); log.scrollTop = log.scrollHeight;
       }
 
