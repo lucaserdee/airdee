@@ -1,0 +1,263 @@
+{
+  "name": "search_td_articles",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query"
+            },
+            {
+              "name": "fromISO"
+            },
+            {
+              "name": "toISO"
+            },
+            {
+              "name": "forceNewest"
+            },
+            {
+              "name": "authorHint"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -400,
+        -176
+      ],
+      "id": "55c8472d-f80c-4b8d-bea3-2ccd203243d4",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// === Re-rank — combineer relevantie (dense/sparse) en actualiteit ===\n// Verwacht inputstructuur uit Weaviate Search:\n// $json.data.Get.Article[] met _additional.distance (kan null) en/of _additional.score, plus publishedAt\n// Optionele velden die je upstream al had: fromISO, toISO, forceNewest\n\nconst items = $json?.data?.Get?.TerdegeArtikel ?? [];\nconst fromISO = $json?.fromISO ?? null;\nconst toISO = $json?.toISO ?? null;\nconst forceNewest = ($json?.forceNewest === true) || String($json?.forceNewest).toLowerCase() === 'true';\n\nif (!Array.isArray(items) || items.length === 0) {\n  return {\n    data: { Get: { TerdegeArtikel: [] } },\n    fromISO, toISO, forceNewest,\n    note: 'Geen artikelen om te reranken'\n  };\n}\n\nitems.sort((a,b) =>\n  (a._additional?.distance ?? 1) - (b._additional?.distance ?? 1)\n);\n\n\n// ---------- Helpers ----------\nconst clamp01 = (x) => Math.max(0, Math.min(1, x));\nconst toMs = (iso) => {\n  const t = new Date(iso).getTime();\n  return Number.isFinite(t) ? t : NaN;\n};\n\n// Bepaal hoe we relevantie uitrekenen:\n// - Als er ergens een distance is: gebruik sim = 1/(1+distance)\n// - Anders: normaliseer _additional.score met min-max naar [0,1]\nfunction makeBatchRelevanceFn(arr) {\n  const hasAnyDistance = arr.some(o => Number.isFinite(o?._additional?.distance));\n  if (hasAnyDistance) {\n    return (o) => {\n      const d = o?._additional?.distance;\n      return Number.isFinite(d) ? 1 / (1 + d) : 0;\n    };\n  }\n  const scores = arr\n    .map(o => o?._additional?.score)\n    .filter(s => Number.isFinite(s));\n  const minS = scores.length ? Math.min(...scores) : 0;\n  const maxS = scores.length ? Math.max(...scores) : 1;\n  const denom = (maxS - minS) || 1;\n  return (o) => {\n    const s = o?._additional?.score;\n    return Number.isFinite(s) ? (s - minS) / denom : 0;\n  };\n}\n\nconst relevanceOf = makeBatchRelevanceFn(items);\n\n// Anker voor recency: midden van range als aanwezig, anders \"nu\"\nconst now = Date.now();\nlet anchor = now;\nif (fromISO && toISO) {\n  const a = toMs(fromISO), b = toMs(toISO);\n  if (Number.isFinite(a) && Number.isFinite(b)) anchor = (a + b) / 2;\n}\n\n// Half-life (dagen) voor recency-boost\nlet halfLifeDays = 14;                    // default\nif (fromISO || toISO) halfLifeDays = 30;  // milder binnen expliciet venster\nif (forceNewest && !(fromISO || toISO)) halfLifeDays = 7; // agressiever bij \"nieuwste\" zonder venster\nconst HALF_LIFE_MS = halfLifeDays * 86_400_000;\n\nfunction recencyBoost(publishedAt) {\n  const t = toMs(publishedAt);\n  if (!Number.isFinite(t)) return 0;\n  const age = Math.abs(t - anchor); // symmetrisch rond anker\n  const boost = Math.exp(-Math.log(2) * (age / HALF_LIFE_MS)); // (0,1]\n  return clamp01(boost);\n}\n\n// Gewichten voor combinatie relevantie/recency\nlet wRel = 0.75, wRec = 0.25;\nif (fromISO || toISO) { wRel = 0.85; wRec = 0.15; }\nif (forceNewest && !(fromISO || toISO)) { wRel = 0.60; wRec = 0.40; }\n\n// Drempel zoals je al had, maar nu over de gereconstrueerde \"relevance\"\nconst hasRange = !!(fromISO || toISO);\nconst DIST_THRESH = hasRange ? 0.9 : 0.7;           // jouw oude waarden\nconst SIM_THRESH = 1 / (1 + DIST_THRESH);           // distance→sim drempel (~0.526 bij 0.9, ~0.588 bij 0.7)\n\nfunction passThresholdByRel(o) {\n  return relevanceOf(o) > SIM_THRESH;\n}\n\n// ---------- Re-ranking pipeline ----------\n\n// 1) prefilter op drempel (val terug op alle items als te streng)\nconst pre = items.filter(passThresholdByRel);\nconst base = pre.length ? pre : items;\n\n// 2) score en verrijk\nconst scored = base.map(o => {\n  const rel = relevanceOf(o);\n  const rec = recencyBoost(o?.publishedAt);\n  const finalScore = wRel * rel + wRec * rec;\n  return { ...o, _rerank: { rel, rec, finalScore } };\n});\n\n// 3) sorteer op finalScore desc, tie-break nieuw → oud\nfunction tms(x){ const t = new Date(x).getTime(); return Number.isFinite(t) ? t : 0; }\nscored.sort((a, b) => {\n  const d = (b._rerank.finalScore - a._rerank.finalScore);\n  if (Math.abs(d) > 1e-9) return d;\n  return tms(b.publishedAt) - tms(a.publishedAt);\n});\n\n// 4) output in dezelfde structuur die je volgende node verwacht\nreturn {\n  data: { Get: { TerdegeArtikel: scored } },  // ← niet 'Article'\n  fromISO, toISO, forceNewest,\n  rerankWeights: { \n    wRel, \n    wRec, \n    halfLifeDays, \n    anchorISO: new Date(anchor).toISOString(), \n    simThreshold: SIM_THRESH },\n  note: 'Re-ranking toegepast: final = wRel*relevance + wRec*recency'\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -176
+      ],
+      "id": "5d485a7d-7b31-4270-8d8a-8d1da7c01025",
+      "name": "Re-rank"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ====== INPUTS ======\n// Verwacht $json.data.Get.TerdegeArtikel vanuit de Weaviate-node\nconst raw = $json?.data?.Get?.TerdegeArtikel ?? [];\nconst fromISO = $json.fromISO ?? null;\nconst toISO   = $json.toISO   ?? null;\nconst hasRange = !!(fromISO || toISO);\n\n// ====== HELPERS ======\nfunction toAmsISO(x){\n  const d = new Date(x);\n  return Number.isFinite(d) ? d.toISOString() : null; // (blijft UTC ISO; eventueel aanpassen naar lokale TZ indien gewenst)\n}\n\n// Slugify voor Terdege: spaties -> \"-\", diacritics weg, \"-\" in bv \"re-enactment\" blijft bestaan\nfunction slugifyTd(title = \"\") {\n  if (!title || typeof title !== \"string\") return null;\n\n  let s = title.normalize(\"NFKD\").replace(/[\\u0300-\\u036f]/g, \"\"); // strip diacritics\n  s = s.replace(/&/g, \" en \");                     // & -> en\n  s = s.replace(/['’\"“”„`´]/g, \"\");                // quotes eruit\n  s = s.replace(/[^A-Za-z0-9\\-]+/g, \" \");          // alles behalve alnum en '-' -> spatie\n  s = s.trim().toLowerCase().replace(/[\\s_]+/g, \"-\"); // whitespace -> '-'\n  s = s.replace(/-+/g, \"-\").replace(/^-|-$/g, \"\"); // collapse & trim '-'\n\n  return s || null;\n}\n\nfunction buildTdLink(o) {\n  const BASE = \"https://www.terdege.nl/artikelen/\";\n\n  // Als Weaviate al url/slug bevat, gebruik die\n  if (o?.url && /^https?:\\/\\//i.test(o.url)) return o.url;\n\n  let slug = (o?.slug || \"\").toString().trim();\n  if (slug) {\n    slug = slug.replace(/^\\/+|\\/+$/g, \"\").toLowerCase();\n    return BASE + slug;\n  }\n\n  // Anders uit de titel\n  const fromTitle = slugifyTd(o?.title || \"\");\n  return fromTitle ? (BASE + fromTitle) : null;\n}\n\n// ====== TIJDSVENSTER ======\nconst fromMs = fromISO ? new Date(fromISO).getTime() : -Infinity;\nconst toMs   = toISO   ? new Date(toISO).getTime()   :  Infinity;\n\n// ====== DISTANCE PREFILTER (optioneel maar aanbevolen) ======\n// Strenger bij tijdsrange om ruis te beperken; gelijk aan eerder advies\nconst THRESH = hasRange ? 0.9 : 0.7;\nconst prelim = raw.filter(o => {\n  const dist = o?._additional?.distance;\n  // als distance ontbreekt, laat dan door (we filteren niet weg)\n  return (typeof dist !== \"number\") || (dist < THRESH);\n});\n\n// ====== TIJDSFILTER ======\nconst used = (hasRange\n  ? prelim.filter(o => {\n      const t = new Date(o.publishedAt).getTime();\n      return Number.isFinite(t) && t >= fromMs && t < toMs;\n    })\n  : prelim\n);\n\n// ====== MAPPING ======\nconst results = used.map(o => ({\n  tdId: o.documentId ?? null,\n  title: o.title ?? null,\n  lead: o.lead ?? null,\n  body: o.body ?? null,\n  author: o.author ?? null,\n  publishedAt: o.publishedAt ?? null,\n  publishedAt_ams: toAmsISO(o.publishedAt),\n  distance: o._additional?.distance ?? null,\n  link: buildTdLink(o),          // <--- NIEUW\n  in_range: hasRange ? true : undefined,\n  source: \"TD\"\n}));\n\nreturn {\n  results,\n  count: results.length,\n  distance_threshold: THRESH,\n  applied_fromISO: fromISO,\n  applied_toISO: toISO,\n  strict_range: hasRange\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -176
+      ],
+      "id": "cb1630c2-7f55-4cf2-a740-88f05b064dee",
+      "name": "Format Output"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const embedding = $json.data?.[0]?.embedding ?? null;\nif (!embedding) return { error: \"Geen embedding gevonden\", ...$json };\n\nconst qRaw   = ($json.query || '').trim();\nlet { fromISO, toISO } = $json;\nconst limit = Number.isFinite($json.limit)\n  ? $json.limit\n  : ((fromISO || toISO) ? 50 : 20);\n\nconst esc = s => s.replace(/\\\\/g,'\\\\\\\\').replace(/\"/g,'\\\\\"').replace(/\\n/g,' ').replace(/\\r/g,' ').trim();\n\nconst ops = [];\nif (fromISO) ops.push(`{ path:[\"publishedAt\"], operator:GreaterThanEqual, valueDate:\"${fromISO}\" }`);\nif (toISO)   ops.push(`{ path:[\"publishedAt\"], operator:LessThan,        valueDate:\"${toISO}\" }`);\nconst author = ($json.authorHint || '').trim();\nif (author)  ops.push(`{ path:[\"author\"], operator:Like, valueText:\"*${esc(author)}*\" }`);\nconst whereStr = ops.length ? `where:{ operator:And, operands:[${ops.join(',')}] },` : '';\n\n\nconst gql = `\n{\n  Get {\n    TerdegeArtikel(\n      ${whereStr}\n      hybrid: {\n        query: \"${esc(qRaw)}\"\n        vector: [${embedding.join(',')}]\n        alpha: 0.6\n        properties: [\"title\",\"lead\",\"body\"]\n      }\n      limit: ${limit}\n    ) {\n      documentId\n      title\n      lead\n      body\n      author\n      publishedAt\n      _additional { id distance score }\n    }\n  }\n}\n`.trim();\n\nreturn { graphql: gql, fromISO, toISO, forceNewest: $json.forceNewest ?? false, source: \"TD\" };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -176
+      ],
+      "id": "49004de8-941a-4c27-acc6-b0764b5c8712",
+      "name": "Build TD GraphQL"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://welz4ghqqeynlanof5qemg.c0.europe-west3.gcp.weaviate.cloud/v1/graphql",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.graphql }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        496,
+        -176
+      ],
+      "id": "f2a26502-14d8-4a23-b54a-1217043c4521",
+      "name": "Weaviate Search TD",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "RJFpp0Wn31lAz0zR",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://azureopenaiemg.openai.azure.com/openai/deployments/EMG_text-embedding-3-large/embeddings?api-version=2023-05-15",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "azureOpenAiApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ (() => {\n  const raw = String($json.query ?? '').trim().replace(/\\\\s+/g,' ');\n  const q    = raw.length ? raw : 'algemeen onderwerp';\n  const qSafe = q.replace(/\\\"/g, '\\\\\\\"');\n\n  const fromISO = $json.fromISO ?? null;\n  const toISO   = $json.toISO   ?? null;\n  const forceNewest = ($json.forceNewest === true) || String($json.forceNewest).toLowerCase() === 'true';\n\n  let tijd = '';\n  if (fromISO && toISO) tijd = `verschenen tussen ${fromISO} en ${toISO} (einddatum exclusief)`;\n  else if (fromISO)      tijd = `verschenen op of na ${fromISO}`;\n  else if (toISO)        tijd = `verschenen vóór ${toISO}`;\n  else if (forceNewest)  tijd = `met nadruk op de meest recent verschenen artikelen`;\n\n  const tijdZin = tijd ? ` Beperk tot artikelen ${tijd}.` : '';\n\n  return `Artikelen over \"${qSafe}\" uit het archief van Terdege (Erdee Media Groep). Focus op nieuws, achtergronden en analyses die inhoudelijk sterk overeenkomen met het onderwerp.${tijdZin} Gebruik titel en hoofdtekst als semantische context.`;\n})() }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        -240
+      ],
+      "id": "3a988823-5a23-430d-ab93-6aec2923fd97",
+      "name": "Azure HTTP Request",
+      "credentials": {
+        "azureOpenAiApi": {
+          "id": "Utv9lWu6uFRSz7FH",
+          "name": "Azure Open AI account embedding"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        48,
+        -176
+      ],
+      "id": "5757f036-2f45-470d-b7b6-e7c2d6a54850",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Azure HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Re-rank": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build TD GraphQL": {
+      "main": [
+        [
+          {
+            "node": "Weaviate Search TD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weaviate Search TD": {
+      "main": [
+        [
+          {
+            "node": "Re-rank",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Build TD GraphQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d79071c3-6170-4ceb-a744-ddd9ea2483d8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3d6c34d8f4384ca25fa01e0f923a6457166bf650c040640922e8f719be8d8641"
+  },
+  "id": "ii9yv9mWTtQ2mdqU",
+  "tags": []
+}
