@@ -31,60 +31,13 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://welz4ghqqeynlanof5qemg.c0.europe-west3.gcp.weaviate.cloud/v1/graphql",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpBearerAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "query",
-              "value": "={{ (() => {\n  // ===== Inputs uit subflow =====\n  const fromISO = $json.fromISO || null;\n  const toISO   = $json.toISO   || null;\n  const qRaw    = String($json.query ?? '').replace(/\"/g, '\\\\\"'); // escape quotes\n  const topK    = Number($json.topK ?? 50); // wat ruimer bij hybrid\n  const alpha   = Number($json.alpha ?? 0.6); // 0=dense-only, 1=sparse-only\n\n  // ===== WHERE-builder =====\n  function buildWhere(fromISO, toISO) {\n    const ops = [];\n    if (fromISO) ops.push(`{ path: [\"publishedAt\"], operator: GreaterThanEqual, valueDate: \"${fromISO}\" }`);\n    if (toISO)   ops.push(`{ path: [\"publishedAt\"], operator: LessThan,        valueDate: \"${toISO}\" }`);\n    return ops.length ? `\n      where: {\n        operator: And\n        operands: [ ${ops.join(', ')} ]\n      }` : '';\n  }\n  const whereClause = buildWhere(fromISO, toISO);\n\n  // ===== Vector voorbereiden (optioneel) =====\n  const raw = Array.isArray($json.vector) ? $json.vector : [];\n  const vecArr = raw.filter(v => Number.isFinite(Number(v)));\n  const vector = vecArr.length ? vecArr.map(v => Number(v).toFixed(8)).join(',') : '';\n  const vectorPart = vector ? `vector: [${vector}]` : ''; // optioneel\n\n  // ===== HYBRID-query =====\n  return `\n  {\n    Get {\n      Article(\n        hybrid: {\n          query: \"${qRaw}\"\n          alpha: ${alpha}\n          ${vectorPart}\n          targetVectors: [\"te_3_large\"]\n          properties: [\"title\",\"lead\",\"body\"]\n        }\n        ${whereClause}\n        limit: ${topK}\n      ) {\n        rdId\n        publishedAt\n        title\n        lead\n        _additional { id score distance }\n      }\n    }\n  }`;\n})() }}"
-            }
-          ]
-        },
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          }
-        }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1120,
-        48
-      ],
-      "id": "10ddf51e-aee1-42a3-b368-d36c10cc81df",
-      "name": "Weaviate Search",
-      "credentials": {
-        "httpBearerAuth": {
-          "id": "RJFpp0Wn31lAz0zR",
-          "name": "Bearer Auth account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// === Format Output — strikte tijdsfilter + robuuste linkconstructie ===\n\n// 1️⃣ Ophalen & sanity-check\nconst raw = $json?.data?.Get?.Article ?? [];\nif (!Array.isArray(raw) || !raw.length) {\n  return { results: [], note: 'Geen artikelen gevonden' };\n}\n\n// 2️⃣ Parameters\nconst fromISO = $json.fromISO ?? null;\nconst toISO   = $json.toISO   ?? null;\nconst hasRange = !!(fromISO || toISO);\n\nconst THRESH = hasRange ? 0.9 : 0.7;\n\nconst fromMs = fromISO ? new Date(fromISO).getTime() : -Infinity;\nconst toMs   = toISO   ? new Date(toISO).getTime()   :  Infinity;\n\n// 3️⃣ Filter op distance (relevantie)\nconst prelim = raw.filter(o => (o._additional?.distance ?? 1) < THRESH);\nconst used0  = prelim.length ? prelim : raw;\n\n// 4️⃣ Filter op tijdsrange (defensief en strikt)\nconst used1 = used0.filter(o => {\n  const t = new Date(o.publishedAt).getTime();\n  return Number.isFinite(t) && t >= fromMs && t < toMs;\n});\n\n// 5️⃣ Alleen in-range meenemen als range opgegeven is\nconst used = hasRange ? used1 : used0;\n\n// 6️⃣ Sorteer: als er re-ranking is, gebruik die; anders nieuw → oud\nfunction tms(x){ const t = new Date(x).getTime(); return Number.isFinite(t) ? t : 0; }\n\nused.sort((a, b) => {\n  const hasA = a._rerank && Number.isFinite(a._rerank.finalScore);\n  const hasB = b._rerank && Number.isFinite(b._rerank.finalScore);\n  if (hasA && hasB) {\n    const d = b._rerank.finalScore - a._rerank.finalScore;\n    return Math.abs(d) > 1e-9 ? d : (tms(b.publishedAt) - tms(a.publishedAt));\n  }\n  // fallback: nieuw → oud\n  return tms(b.publishedAt) - tms(a.publishedAt);\n});\n\n// 7️⃣ Helper: robuuste RD-link\nfunction buildRdLink(o) {\n  const base = 'https://www.rd.nl';\n  const norm = s => s.replace(/\\/+/g, '/').replace(':/', '://');\n\n  if (o.url && /^https?:\\/\\//i.test(o.url)) return o.url; // directe URL\n  if (o.slug && typeof o.slug === 'string') {\n    const s = o.slug.replace(/^\\/+/, '');\n    if (/^artikel\\//i.test(s)) return `${base}/${norm(s)}`;\n    return `${base}/${norm('artikel/' + s)}`;\n  }\n  if (o.rdId) return `${base}/${norm('artikel/' + String(o.rdId))}`;\n  return null;\n}\n\n// 8️⃣ Hulpfunctie om NL-datum te bekijken\nfunction toAmsISO(isoStr) {\n  if (!isoStr) return null;\n  try {\n    const ams = new Date(new Date(isoStr).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));\n    return ams.toISOString();\n  } catch {\n    return null;\n  }\n}\n\n// 9️⃣ Map resultaat\nconst results = used.map(o => {\n  const pub = new Date(o.publishedAt);\n  const pubMs = pub.getTime();\n  const inRange = hasRange ? (pubMs >= fromMs && pubMs < toMs) : true;\n\n  return {\n    rdId: o.rdId ?? null,\n    title: o.title,\n    publishedAt: o.publishedAt,\n    publishedAt_ams: toAmsISO(o.publishedAt),\n    lead: o.lead,\n    body: o.body,\n    distance: o._additional?.distance ?? null,\n    link: buildRdLink(o),\n    in_range: inRange\n  };\n});\n\n// 10️⃣ Teruggeven\nreturn {\n  results,\n  count: results.length,\n  distance_threshold: THRESH,\n  applied_fromISO: fromISO,\n  applied_toISO: toISO,\n  strict_range: hasRange\n};\n"
+        "jsCode": "// === Format Output — strikte tijdsfilter + robuuste linkconstructie ===\n\n// 1️⃣ Ophalen & sanity-check\nconst raw = $json?.data?.Get?.Article ?? [];\nif (!Array.isArray(raw) || !raw.length) {\n  return { results: [], note: 'Geen artikelen gevonden' };\n}\n\n// 2️⃣ Parameters\nconst fromISO = $json.fromISO ?? null;\nconst toISO   = $json.toISO   ?? null;\nconst hasRange = !!(fromISO || toISO);\n\nconst THRESH = hasRange ? 0.9 : 0.7;\n\nconst fromMs = fromISO ? new Date(fromISO).getTime() : -Infinity;\nconst toMs   = toISO   ? new Date(toISO).getTime()   :  Infinity;\n\n// 3️⃣ Filter op distance (relevantie)\nconst prelim = raw.filter(o => (o._additional?.distance ?? 1) < THRESH);\nconst used0  = prelim.length ? prelim : raw;\n\n// 4️⃣ Filter op tijdsrange (defensief en strikt)\nconst used1 = used0.filter(o => {\n  const t = new Date(o.publishedAt).getTime();\n  return Number.isFinite(t) && t >= fromMs && t < toMs;\n});\n\n// 5️⃣ Alleen in-range meenemen als range opgegeven is\nconst used = hasRange ? used1 : used0;\n\n// 6️⃣ Sorteer: als er re-ranking is, gebruik die; anders nieuw → oud\nfunction tms(x){ const t = new Date(x).getTime(); return Number.isFinite(t) ? t : 0; }\n\nused.sort((a, b) => {\n  const hasA = a._rerank && Number.isFinite(a._rerank.finalScore);\n  const hasB = b._rerank && Number.isFinite(b._rerank.finalScore);\n  if (hasA && hasB) {\n    const d = b._rerank.finalScore - a._rerank.finalScore;\n    return Math.abs(d) > 1e-9 ? d : (tms(b.publishedAt) - tms(a.publishedAt));\n  }\n  // fallback: nieuw → oud\n  return tms(b.publishedAt) - tms(a.publishedAt);\n});\n\n// 7️⃣ Helper: robuuste RD-link\nfunction buildRdLink(o) {\n  const base = 'https://www.rd.nl';\n  const norm = s => s.replace(/\\/+/g, '/').replace(':/', '://');\n\n  if (o.url && /^https?:\\/\\//i.test(o.url)) return o.url; // directe URL\n  if (o.slug && typeof o.slug === 'string') {\n    const s = o.slug.replace(/^\\/+/, '');\n    if (/^artikel\\//i.test(s)) return `${base}/${norm(s)}`;\n    return `${base}/${norm('artikel/' + s)}`;\n  }\n  if (o.rdId) return `${base}/${norm('artikel/' + String(o.rdId))}`;\n  return null;\n}\n\n// 8️⃣ Hulpfunctie om NL-datum te bekijken\nfunction toAmsISO(isoStr) {\n  if (!isoStr) return null;\n  try {\n    const ams = new Date(new Date(isoStr).toLocaleString('en-US', { timeZone: 'Europe/Amsterdam' }));\n    return ams.toISOString();\n  } catch {\n    return null;\n  }\n}\n\n// 9️⃣ Map resultaat\nconst results = used.map(o => {\n  const pub = new Date(o.publishedAt);\n  const pubMs = pub.getTime();\n  const inRange = hasRange ? (pubMs >= fromMs && pubMs < toMs) : true;\n\n  return {\n    rdId: o.rdId ?? null,\n    title: o.title,\n    publishedAt: o.publishedAt,\n    publishedAt_ams: toAmsISO(o.publishedAt),\n    lead: o.lead,\n    body: o.body,\n    distance: o._additional?.distance ?? null,\n    link: buildRdLink(o),\n    in_range: inRange,\n    source: \"RD\",\n  };\n});\n\n// 10️⃣ Teruggeven\nreturn {\n  results,\n  count: results.length,\n  distance_threshold: THRESH,\n  applied_fromISO: fromISO,\n  applied_toISO: toISO,\n  strict_range: hasRange\n};\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1568,
+        1232,
         48
       ],
       "id": "c39ab188-a45e-47b7-bd8f-65eef42474e9",
@@ -116,7 +69,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        224,
+        160,
         -80
       ],
       "id": "571ca1d7-bd76-452c-9f18-1654b1e7c901",
@@ -136,7 +89,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        896,
+        688,
         48
       ],
       "id": "c3e11541-3c1d-4141-a6b1-f318540ee8f0",
@@ -165,7 +118,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        448,
+        336,
         -80
       ],
       "id": "e6320cc5-7220-4ee2-9e4d-9a7445dd68a9",
@@ -180,7 +133,7 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        672,
+        512,
         48
       ],
       "id": "905444c7-1018-4bb4-82bf-fcfa9c3309d9",
@@ -194,11 +147,58 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1344,
+        1056,
         48
       ],
       "id": "b8d91b8c-a9e5-4372-b1da-79da3a82931d",
       "name": "Re-rank"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://welz4ghqqeynlanof5qemg.c0.europe-west3.gcp.weaviate.cloud/v1/graphql",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "=(() => {\n  // Inputs\n  const fromISO = $json.fromISO || null;\n  const toISO   = $json.toISO   || null;\n  const qRaw    = String($json.query ?? '').replace(/\\\"/g, '\\\\\"');\n\n  // Params\n  const alpha   = Number($json.alpha ?? 0.6);\n  const wantNewest = ($json.forceNewest === true) || String($json.forceNewest).toLowerCase() === 'true';\n\n  // WHERE\n  function buildWhere(fromISO, toISO) {\n    const ops = [];\n    if (fromISO) ops.push(`{ path: [\"publishedAt\"], operator: GreaterThanEqual, valueDate: \"${fromISO}\" }`);\n    if (toISO)   ops.push(`{ path: [\"publishedAt\"], operator: LessThan,        valueDate: \"${toISO}\" }`);\n    return ops.length ? `\n        where: {\n          operator: And\n          operands: [ ${ops.join(', ')} ]\n        }` : '';\n  }\n  const whereClause = buildWhere(fromISO, toISO);\n\n  // Vector\n  const rawVec = Array.isArray($json.vector) ? $json.vector : [];\n  const vecArr = rawVec.map(Number).filter(Number.isFinite);\n  const hasVector = vecArr.length > 0;\n  const vectorPart = hasVector ? `vector: [${vecArr.join(',')}]` : '';\n\n  // Limit\n  const limit =\n    Number.isFinite(Number($json.limit)) ? Number($json.limit)\n    : Number.isFinite(Number($json.topK)) ? Number($json.topK)\n    : 50;\n\n  // Sort als \"nieuwste\" gevraagd\n  const sortStr = wantNewest ? `sort: [{ path: [\"publishedAt\"], order: desc }]` : '';\n\n  // Search block: hybrid met vector óf BM25 fallback\n  const hybridBits = [\n    `query: \"${qRaw}\"`,\n    `alpha: ${alpha}`,\n    vectorPart,\n    `targetVectors: [\"te_3_large\"]`,\n    `properties: [\"title\",\"lead\",\"body\"]`\n  ].filter(Boolean).join('\\n        ');\n\n  const searchBlock = hasVector\n    ? `hybrid: {\\n        ${hybridBits}\\n      }`\n    : `bm25: { query: \"${qRaw}\" }`;\n\n  // GraphQL\n  return `\n  {\n    Get {\n      Article(\n        ${searchBlock}\n        ${whereClause}\n        ${sortStr}\n        limit: ${limit}\n      ) {\n        title\n        lead\n        body\n        publishedAt\n        _additional { distance id }\n      }\n    }\n  }`;\n})()\n"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        48
+      ],
+      "id": "48a2ceae-7868-45a4-a205-80f88e26d62e",
+      "name": "Weaviate Search",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "RJFpp0Wn31lAz0zR",
+          "name": "Bearer Auth account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -215,17 +215,6 @@
             "node": "Merge",
             "type": "main",
             "index": 1
-          }
-        ]
-      ]
-    },
-    "Weaviate Search": {
-      "main": [
-        [
-          {
-            "node": "Re-rank",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -284,14 +273,31 @@
           }
         ]
       ]
+    },
+    "Format Output": {
+      "main": [
+        []
+      ]
+    },
+    "Weaviate Search": {
+      "main": [
+        [
+          {
+            "node": "Re-rank",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "554de165-1080-4b81-9c38-cefb3d3e875d",
+  "versionId": "8d843b96-4d23-49d1-aaa1-0f7b94d1b5f0",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "3d6c34d8f4384ca25fa01e0f923a6457166bf650c040640922e8f719be8d8641"
   },
   "id": "13IhSMkzb9YUf0PP",
