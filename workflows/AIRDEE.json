@@ -8,13 +8,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "a890e71c-d6db-4dbf-ae1d-49efeaca00bd",
+      "id": "308bd5e8-fa9a-4ba0-b0c2-7b6997793aeb",
       "name": "Chat UI webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        416,
-        272
+        0,
+        0
       ],
       "webhookId": "0e361650-fbdc-493a-82ea-1081b0fc552b"
     },
@@ -26,10 +26,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        640,
-        272
+        224,
+        0
       ],
-      "id": "3a92920a-97ac-4332-9ffe-6b162b681f91",
+      "id": "6fc97840-707c-46d4-a5fc-8f0ae3d4b774",
       "name": "Validate Request"
     },
     {
@@ -40,14 +40,14 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatAzureOpenAi",
       "typeVersion": 1,
       "position": [
-        1088,
-        496
+        656,
+        224
       ],
-      "id": "ff241851-8635-4c46-bfba-09dbaec51efb",
+      "id": "63c7c65c-0102-4484-8063-c3581c8a8644",
       "name": "Azure OpenAI Chat Model",
       "credentials": {
         "azureOpenAiApi": {
-          "id": "r53g3Mv4leJjmPvW",
+          "id": "rhdqIQM0lf9JI3JP",
           "name": "Azure Open AI account"
         }
       }
@@ -64,10 +64,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 2.2,
       "position": [
-        1136,
-        272
+        720,
+        0
       ],
-      "id": "750febc4-542e-4d7f-99d8-738864a49ea4",
+      "id": "7060a524-6103-4f94-96b1-9544a9dee26e",
       "name": "AI Agent"
     },
     {
@@ -79,10 +79,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1552,
-        272
+        1136,
+        0
       ],
-      "id": "cab56960-5bc3-432d-88ca-06f62f84f998",
+      "id": "8a51fe71-15a2-4ae1-b843-8fb0c7d905a0",
       "name": "Respond to Webhook"
     },
     {
@@ -90,9 +90,9 @@
         "description": "\"Als een gebruiker een vraag stelt over het RD, embed je deze en haal je de top-K dichtstbijzijnde krantenartikelen op uit Weaviate. Retourneert rang, rdId, titel en afstand.\"",
         "workflowId": {
           "__rl": true,
-          "value": "13IhSMkzb9YUf0PP",
+          "value": "QvH3aoTqLjbaHmBu",
           "mode": "list",
-          "cachedResultUrl": "/workflow/13IhSMkzb9YUf0PP",
+          "cachedResultUrl": "/workflow/QvH3aoTqLjbaHmBu",
           "cachedResultName": "search_articles"
         },
         "workflowInputs": {
@@ -155,10 +155,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1344,
-        496
+        928,
+        224
       ],
-      "id": "8efcd1ca-d5dc-4861-85fd-1ec60c821d67",
+      "id": "9e2af029-9c1c-4e01-9348-f2e058b54afd",
       "name": "search_articles"
     },
     {
@@ -169,10 +169,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        864,
-        272
+        448,
+        0
       ],
-      "id": "e3b8e1b4-c3a1-4bd3-aca3-179465e57334",
+      "id": "c9d79762-3c35-4aaa-a142-e10aee353661",
       "name": "Add SessionID"
     },
     {
@@ -180,10 +180,10 @@
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
       "position": [
-        1216,
-        496
+        800,
+        224
       ],
-      "id": "3058947c-af11-4d9f-8614-afb0cd5eae8d",
+      "id": "c385e68e-de92-4f40-b2ac-71e52b4eeb19",
       "name": "Simple Memory"
     },
     {
@@ -191,9 +191,9 @@
         "description": "\"Als een gebruiker een vraag stelt over het Terdege, embed je deze en haal je de top-K dichtstbijzijnde krantenartikelen op uit Weaviate. Retourneert rang, rdId, titel, body, auteur en afstand.\"",
         "workflowId": {
           "__rl": true,
-          "value": "ii9yv9mWTtQ2mdqU",
+          "value": "R4WjTwkjQfEJ7oRY",
           "mode": "list",
-          "cachedResultUrl": "/workflow/ii9yv9mWTtQ2mdqU",
+          "cachedResultUrl": "/workflow/R4WjTwkjQfEJ7oRY",
           "cachedResultName": "search_td_articles"
         },
         "workflowInputs": {
@@ -265,10 +265,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1488,
-        496
+        1072,
+        224
       ],
-      "id": "1e56620e-a53e-4741-a171-9390dc103680",
+      "id": "d2ce8377-6f69-4557-a09b-315915edd287",
       "name": "search_td_articles"
     }
   ],
@@ -367,11 +367,11 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "7a06e56d-bcc7-41e3-ab85-3db98b89a457",
+  "versionId": "cda2a3d0-dc20-40cb-bfa8-049ca8e03794",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "3d6c34d8f4384ca25fa01e0f923a6457166bf650c040640922e8f719be8d8641"
+    "instanceId": "971bafcf224e032b5aa7287405a29d8a7b4ec50495a62e2829a5528993ff37ea"
   },
-  "id": "ouh1AgfENaD3z84P",
+  "id": "DgvoF1oblxyzmpsR",
   "tags": []
 }
