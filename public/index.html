@@ -1,281 +1,80 @@
 <!DOCTYPE html>
 <html lang="nl">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EMG AI Chatbot</title>
-    <meta name="color-scheme" content="light" />
-    <style>
-      /* ====== Design tokens (EMG-stijl) ====== */
-      :root{
-        --emg-teal:#0f766e;
-        --emg-teal-light:#43c6b9;
-        --emg-blue:#3b5ba9;
-        --emg-yellow:#f2c100;
-        --emg-orange:#f19d4b;
-        --emg-orange-deep:#e16a30;
-
-        --bg:#ffffff;
-        --bg-tint:#f6f8fb;
-        --ink:#111827;         /* bijna zwart */
-        --ink-muted:#5b6472;   /* grijs */
-        --border:#e5e7eb;      /* lichtgrijs */
-
-        --radius-lg:18px;
-        --radius-md:12px;
-        --shadow-lg:0 24px 60px rgba(16,24,40,.08);
-        --shadow-md:0 12px 28px rgba(16,24,40,.06);
-      }
-
-      *{box-sizing:border-box}
-      html,body{height:100%}
-      body{
-        margin:0;
-        font:16px/1.55 "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color:var(--ink);
-        background:
-          radial-gradient(1200px 600px at 20% -10%, var(--bg-tint), transparent 60%),
-          linear-gradient(180deg, var(--bg), var(--bg));
-      }
-
-      /* ====== Header ====== */
-      .site-header{
-        position:sticky; top:0; z-index:10;
-        background:rgba(255,255,255,.9);
-        border-bottom:1px solid var(--border);
-        backdrop-filter: blur(8px);
-      }
-      .wrap{
-        width:min(1100px, 92vw);
-        margin:0 auto;
-        padding:14px 8px;
-        display:flex;
-        align-items:center;
-        gap:18px;
-        justify-content:flex-start; /* expliciet links uitlijnen */
-    }
-      .brand{
-        display:flex; 
-        align-items:center; 
-        gap:14px;
-        text-decoration:none; 
-        color:inherit;
-      }
-      .brand img{
-        height:38px; 
-        width:auto; 
-        display:block;
-      }
-      .brand .wordmark{
-        font-weight:700; 
-        letter-spacing:.2px;
-      }
-
-      /* ====== Main ====== */
-      main{ width:min(900px, 92vw); margin:28px auto 60px; display:grid; gap:24px; }
-
-      .intro{
-        background:#fff; border:1px solid var(--border); border-radius:var(--radius-lg);
-        padding:20px 22px; box-shadow:var(--shadow-md);
-      }
-      .intro h1{
-        margin:0 0 6px; font-size:clamp(22px, 3vw, 28px);
-      }
-      .intro p{ margin:0; color:var(--ink-muted); }
-
-      /* ====== Card: chat ====== */
-      .card{
-        background:#fff; border:1px solid var(--border); border-radius:var(--radius-lg);
-        box-shadow:var(--shadow-lg);
-        padding:22px;
-      }
-
-      form .grid{ display:grid; gap:16px; }
-      label{ font-weight:600; display:block; margin:0 0 6px; }
-
-      input[type="url"], textarea{
-        width:100%; border:1px solid var(--border); border-radius:var(--radius-md);
-        padding:12px 14px; background:#fff; font:inherit; color:inherit;
-        transition:border-color .2s, box-shadow .2s;
-      }
-      input[type="url"]:focus, textarea:focus{
-        outline:none;
-        border-color:var(--emg-blue);
-        box-shadow:0 0 0 3px rgba(59,91,169,.15);
-      }
-      textarea{ min-height:120px; resize:vertical; }
-
-      .actions{
-        display:flex; gap:12px; align-items:center; justify-content:flex-end;
-      }
-      button[type="submit"]{
-        appearance:none; border:none; cursor:pointer;
-        color:#fff; font-weight:700; letter-spacing:.2px; padding:12px 22px;
-        border-radius:999px;
-        background:linear-gradient(135deg, var(--emg-teal) 0%, var(--emg-orange-deep) 100%);
-        box-shadow:0 14px 28px rgba(225,106,48,.22);
-        transition:transform .15s ease, box-shadow .15s ease, opacity .2s;
-      }
-      button[type="submit"]:hover{ transform:translateY(-1px); box-shadow:0 18px 36px rgba(225,106,48,.26); }
-      button[type="submit"]:disabled{ opacity:.65; cursor:wait; transform:none; box-shadow:none; }
-
-      .status{ min-height:1.25em; color:#b91c1c; font-weight:600; }
-
-      /* ====== Chat log ====== */
-      .chat-log{ display:grid; gap:14px; max-height:440px; overflow:auto; padding-right:4px; }
-      .message{ display:grid; gap:6px; }
-      .role{
-        font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
-        color:var(--ink-muted);
-      }
-      .message.user .role{ color:var(--emg-blue); }
-      .message.assistant .role{ color:var(--emg-teal); }
-      .bubble{
-        background:linear-gradient(0deg, rgba(67,198,185,.08), rgba(67,198,185,.08));
-        border:1px solid var(--border); border-radius:14px; padding:12px 14px; white-space:pre-wrap;
-      }
-      .message.user .bubble{
-        background:linear-gradient(0deg, rgba(59,91,169,.08), rgba(59,91,169,.08));
-      }
-
-      /* Subtle EMG color line under header */
-      .emg-stripe{
-        height:6px; display:flex; gap:8px; padding:0 10px 10px; align-items:flex-end;
-      }
-      .emg-stripe span{
-        display:block; width:34px; height:6px; border-radius:999px;
-      }
-      .c1{ background:var(--emg-teal); }
-      .c2{ background:var(--emg-teal-light); }
-      .c3{ background:var(--emg-blue); }
-      .c4{ background:var(--emg-yellow); height:22px;}
-      .c5{ background:var(--emg-orange); height:38px;}
-      .c6{ background:var(--emg-orange-deep); height:54px;}
-    </style>
-  </head>
-
-  <body>
-    <!-- ====== Header met logo ====== -->
-    <header class="site-header" role="banner">
-  <div class="wrap">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AIRDEE</title>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <!-- Zijbalk -->
+  <aside class="sidebar">
     <a class="brand" href="https://www.erdeemediagroep.nl/" target="_blank" rel="noopener">
-      <img src="./emglogo.png"
-           alt="Erdee Media Groep logo"/>
+      <img src="emglogo.png" alt="Erdee Media Groep" class="logo" />
     </a>
+    <a class="new-chat" href="#">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Nieuwe chat
+    </a>
+  </aside>
+
+  <!-- Hoofdvlak -->
+  <main class="shell">
+    <header class="topbar">
+      <h1 class="title">AIRDEE</h1>
+      <div class="menu">
+        <button id="menu-btn" class="icon-btn" aria-label="Menu" title="Menu">
+          <!-- duidelijke, thema-onafhankelijke ⋮ als SVG -->
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="5" r="2"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+            <circle cx="12" cy="19" r="2"></circle>
+          </svg>
+        </button>
+        <div id="dropdown" class="dropdown hidden" role="menu">
+          <button id="open-settings" role="menuitem">
+            <span class="icon">⚙</span> Instellingen
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <section id="chat-log" class="chat-log" aria-live="polite"></section>
+
+    <!-- Input dock onderaan, gecentreerd -->
+    <form id="chat-form" autocomplete="off" class="dock">
+      <div class="dock-inner">
+        <input id="question" name="question" type="text"
+               placeholder="Typ je vraag…" required />
+        <button id="send-btn" type="submit" class="send" disabled aria-label="Verstuur">
+          <!-- pijltje als SVG voor scherp contrast -->
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M2 21l20-9L2 3v7l14 2L2 14v7z"></path>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <!-- Instellingen modal -->
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Instellingen">
+    <div class="modal-content">
+      <h2>Instellingen</h2>
+      <label class="field">
+        Thema
+        <select id="theme-select">
+          <option value="system" selected>Systeem</option>
+          <option value="light">Licht</option>
+          <option value="dark">Donker</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button id="close-settings" class="btn-secondary">Sluiten</button>
+      </div>
+    </div>
   </div>
-
-  <!-- Zetde streep óók in een wrap met dezelfde breedte -->
-  <div class="wrap emg-stripe" aria-hidden="true">
-    <span class="c1"></span><span class="c2"></span><span class="c3"></span>
-    <span class="c4"></span><span class="c5"></span><span class="c6"></span>
-  </div>
-</header>
-    <main>
-      <section class="intro">
-        <h1>AIRDEE</h1>
-        <p>Stel je vraag over één of meerdere artikelen.</p>
-      </section>
-
-      <section class="card">
-        <form id="chat-form" class="grid" autocomplete="off">
-          <div>
-            <label for="endpoint">Webhook endpoint</label>
-            <input id="endpoint" name="endpoint" type="url"
-              value="http://172.28.128.188:5678/webhook/ai-chatbot"
-              placeholder="http://172.28.128.188:5678/webhook/ai-chatbot" required />
-          </div>
-
-          <div>
-            <label for="question">Vraag</label>
-            <textarea id="question" name="question" placeholder="Wat wil je weten?" rows="4" required></textarea>
-          </div>
-
-          <div class="actions">
-            <span id="status" class="status" aria-live="polite"></span>
-            <button type="submit">Verstuur</button>
-          </div>
-        </form>
-      </section>
-
-      <section id="chat-log" class="card chat-log" aria-live="polite" aria-label="Gespreksgeschiedenis"></section>
-    </main>
-
-    <script>
-      const form = document.getElementById('chat-form');
-      const log  = document.getElementById('chat-log');
-      const statusEl = document.getElementById('status');
-      
-      function escapeHtml(s){
-        return s
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-      }
-    
-      // Zet Markdown-links en kale URLs om naar <a>…</a>, behoudt verder veiligheid.
-      function renderTextAsHtml(text){
-        let html = escapeHtml(String(text ?? ''));
-      
-        // 1) Markdown links: [titel](https://...)
-        html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-          '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-      
-        // 2) Kale URLs autolinken (geen onderdeel van een attribuut/quote)
-        html = html.replace(/(^|[\s(])((https?:\/\/[^\s<)]+))/g,
-          '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
-      
-        // 3) Code-fences ```...``` → <pre><code>...</code></pre>
-        html = html.replace(/```([\s\S]*?)```/g,
-          (m, code) => `<pre><code>${code}</code></pre>`);
-      
-        // 4) Regels behouden
-        html = html.replace(/\n/g, '<br>');
-      
-        return html;
-      }
-
-      function addMessage(role, content){
-        const a = document.createElement('article'); a.className = `message ${role}`;
-        const r = document.createElement('span'); r.className = 'role'; r.textContent = role==='user'?'Vraag':'Antwoord';
-        const b = document.createElement('div');  b.className = 'bubble';
-        b.innerHTML = renderTextAsHtml(content);
-        a.append(r,b); log.append(a); log.scrollTop = log.scrollHeight;
-      }
-
-      form.addEventListener('submit', async (ev)=>{
-        ev.preventDefault(); statusEl.textContent = '';
-        const endpoint = document.getElementById('endpoint').value.trim();
-        const question = document.getElementById('question').value.trim();
-
-        if(!endpoint || !question){ return; }
-        addMessage('user', question);
-        const btn = form.querySelector('button[type="submit"]'); btn.disabled = true;
-
-        try{
-          const resp = await fetch(endpoint, {
-            method:'POST',
-            headers:{ 'Content-Type':'application/json' },
-            body: JSON.stringify({ question })
-          });
-
-          // We verwachten platte tekst (n8n Respond node -> Text)
-          const text = await resp.text();
-
-          if(!resp.ok){
-            throw new Error(text || `HTTP ${resp.status}`);
-          }
-
-          // Toon exact de tekst zonder JSON-ruis
-          addMessage('assistant', text || '—');
-          form.reset();
-        }catch(err){
-          console.error(err);
-          statusEl.textContent = err.message || 'Er ging iets mis.';
-          addMessage('assistant','Er is een fout opgetreden. Controleer de servermelding.');
-        }finally{
-          btn.disabled = false;
-        }
-      });
-    </script>
-  </body>
+</body>
 </html>

@@ -1,0 +1,407 @@
+/* =========================
+   DESIGN TOKENS
+   ========================= */
+:root {
+  color-scheme: light dark;
+
+  /* Light mode */
+  --bg: #fafafa;
+  --ink: #111;
+  --muted: #6b7280;
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --border: #e5e7eb;
+  --shadow: 0 18px 48px rgba(16,24,40,.08);
+
+  --accent: #10a37f;
+  --accent-press: #0c876a;
+
+  --r-lg: 18px;
+  --r-md: 12px;
+  --r-sm: 10px;
+
+  --sidebar: 240px;
+  --content: 960px;
+}
+
+/* Dark mode (iets lichter & zachter) */
+body[data-theme="dark"] {
+  --bg: #1f2125;
+  --ink: #e9eaed;
+  --muted: #a8adb3;
+  --surface: #2a2d31;
+  --surface-2: #24272b;
+  --border: #3a3d42;
+  --shadow: 0 18px 48px rgba(0,0,0,.35);
+  --accent: #10a37f;
+  --accent-press: #0c876a;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  overflow: hidden;
+}
+
+/* =========================
+   ZIJBALK (vast links)
+   ========================= */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  margin-bottom: 32px;
+}
+.logo {
+  display: block;
+  width: 180px; /* iets groter */
+  height: auto;
+  content: url("./emglogo.png");
+  transition: opacity 0.3s ease;
+}
+body[data-theme="dark"] .logo {
+  content: url("./emglogodm.png");
+}
+
+.new-chat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.9;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 6px 2px;
+  transition: color 0.2s ease, opacity 0.2s ease;
+  margin-top: auto;
+  margin-bottom: 30px;
+}
+.new-chat svg {
+  width: 20px;
+  height: 20px;
+  fill: var(--accent);
+  flex-shrink: 0;
+}
+.new-chat:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* =========================
+   HOOFDGEDEELTE
+   ========================= */
+.shell {
+  margin-left: var(--sidebar);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topbar{
+  position: fixed;
+  top: 0;
+  left: var(--sidebar);
+  right: 0;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+.title {
+  margin-left: 6px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+
+/* Drie-puntjes menu */
+.menu {
+  position: relative;
+}
+.icon-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px;
+  cursor: pointer;
+}
+.icon-btn svg {
+  fill: currentColor;
+  width: 22px;
+  height: 22px;
+}
+
+.dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  min-width: 180px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+.dropdown button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dropdown button:hover {
+  background: var(--surface-2);
+}
+.hidden {
+  display: none !important;
+}
+
+/* =========================
+   CHATLOG
+   ========================= */
+.chat-log{
+  flex: 1;
+  width: 100%;
+  max-width: var(--content);
+  margin: 0 auto;
+  padding: 16px 0 96px;   /* was 16px 24px 90px — removed side padding */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+}
+
+/* Chatberichten */
+.message {
+  max-width: 780px;
+  line-height: 1.6;
+  border-radius: var(--r-lg);
+  word-wrap: break-word;
+  opacity: 0;
+  animation: fadeIn 0.35s ease forwards;
+}
+.message.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+  padding: 12px 14px 12px 16px;
+  border-bottom-right-radius: 6px;
+  box-shadow: 0 10px 28px rgba(16,163,127,.25);
+}
+.message.assistant {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+
+/* Tekstopmaak binnen assistent-berichten */
+.message.assistant p { margin: 0 0 10px; }
+.message.assistant p + p { margin-top: 10px; }
+.message.assistant a { color: var(--accent); text-decoration: none; }
+.message.assistant a:hover { text-decoration: underline; }
+.message.assistant ul, .message.assistant ol {
+  padding-left: 1.2rem;
+  margin: .2rem 0 .8rem;
+}
+.message.assistant li + li { margin-top: .25rem; }
+
+/* Loader */
+.loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.loader .gear {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
+}
+
+/* =========================
+   INPUTDOCK
+   ========================= */
+.dock{
+  position: fixed;
+  left: var(--sidebar);
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+  background: transparent;
+  border-top: none;
+  z-index: 9;
+}
+
+.dock-inner{
+  width: 100%;
+  max-width: var(--content);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 6px 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.10);
+}
+
+
+.dock-inner input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  padding: 10px 6px;
+}
+.dock-inner input::placeholder {
+  color: var(--muted);
+}
+
+/* Verstuurknop (rond, zonder rand) */
+.send {
+  border: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: not-allowed;
+  background: color-mix(in oklab, var(--accent) 55%, #aaa 45%);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(16,163,127,.18);
+  transition: transform .12s ease, opacity .15s ease, box-shadow .2s ease;
+  opacity: .7;
+}
+.send.enabled {
+  cursor: pointer;
+  opacity: 1;
+  background: var(--accent);
+}
+.send.enabled:hover {
+  box-shadow: 0 0 12px rgba(16,163,127,.6);
+}
+.send svg {
+  fill: currentColor;
+  width: 20px;
+  height: 20px;
+}
+.send:active {
+  transform: translateY(1px) scale(.98);
+}
+
+/* =========================
+   MODAL (instellingen)
+   ========================= */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal.hidden { display: none !important; }
+.modal-content {
+  background: var(--surface);
+  color: var(--ink);
+  width: min(520px, 92vw);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.field { display: grid; gap: 8px; margin-top: 8px; }
+select {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font: inherit;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn-secondary {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+/* =========================
+   SCROLLBAR & ANIMATIES
+   ========================= */
+.chat-log::-webkit-scrollbar { width: 10px; }
+.chat-log::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--border) 65%, #999 35%);
+  border-radius: 999px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

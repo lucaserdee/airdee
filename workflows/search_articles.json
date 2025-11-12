@@ -23,10 +23,10 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -16,
-        48
+        -176,
+        128
       ],
-      "id": "e6162dd5-c519-4b04-a4d8-69ac7ee70c42",
+      "id": "9efccca4-7663-4bdc-84b1-f8ef24691d71",
       "name": "When Executed by Another Workflow"
     },
     {
@@ -37,10 +37,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1232,
-        48
+        1072,
+        128
       ],
-      "id": "c39ab188-a45e-47b7-bd8f-65eef42474e9",
+      "id": "a18178e9-cecc-4fda-bea6-0ffec4d57aaf",
       "name": "Format Output"
     },
     {
@@ -69,15 +69,15 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        160,
-        -80
+        0,
+        0
       ],
-      "id": "571ca1d7-bd76-452c-9f18-1654b1e7c901",
+      "id": "bc384fe5-cfb3-4991-b2bf-3aa77511f67e",
       "name": "Azure HTTP Request",
       "credentials": {
         "azureOpenAiApi": {
-          "id": "Utv9lWu6uFRSz7FH",
-          "name": "Azure Open AI account embedding"
+          "id": "rhdqIQM0lf9JI3JP",
+          "name": "Azure Open AI account"
         }
       }
     },
@@ -89,10 +89,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        688,
-        48
+        528,
+        128
       ],
-      "id": "c3e11541-3c1d-4141-a6b1-f318540ee8f0",
+      "id": "509adcb3-8a27-4fce-992b-1fbc97850715",
       "name": "publication-date encoding"
     },
     {
@@ -118,10 +118,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        336,
-        -80
+        176,
+        0
       ],
-      "id": "e6320cc5-7220-4ee2-9e4d-9a7445dd68a9",
+      "id": "ba8d4dc1-39fd-4f5a-a328-3310c9e568b1",
       "name": "Pick Vector"
     },
     {
@@ -133,10 +133,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        512,
-        48
+        352,
+        128
       ],
-      "id": "905444c7-1018-4bb4-82bf-fcfa9c3309d9",
+      "id": "ab4f38a2-b072-4de2-8218-84b51e862a61",
       "name": "Merge"
     },
     {
@@ -147,10 +147,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1056,
-        48
+        896,
+        128
       ],
-      "id": "b8d91b8c-a9e5-4372-b1da-79da3a82931d",
+      "id": "9a5d3dcc-7b9c-40ef-90a3-837639a0b7be",
       "name": "Re-rank"
     },
     {
@@ -173,7 +173,7 @@
           "parameters": [
             {
               "name": "query",
-              "value": "=(() => {\n  // Inputs\n  const fromISO = $json.fromISO || null;\n  const toISO   = $json.toISO   || null;\n  const qRaw    = String($json.query ?? '').replace(/\\\"/g, '\\\\\"');\n\n  // Params\n  const alpha   = Number($json.alpha ?? 0.6);\n  const wantNewest = ($json.forceNewest === true) || String($json.forceNewest).toLowerCase() === 'true';\n\n  // WHERE\n  function buildWhere(fromISO, toISO) {\n    const ops = [];\n    if (fromISO) ops.push(`{ path: [\"publishedAt\"], operator: GreaterThanEqual, valueDate: \"${fromISO}\" }`);\n    if (toISO)   ops.push(`{ path: [\"publishedAt\"], operator: LessThan,        valueDate: \"${toISO}\" }`);\n    return ops.length ? `\n        where: {\n          operator: And\n          operands: [ ${ops.join(', ')} ]\n        }` : '';\n  }\n  const whereClause = buildWhere(fromISO, toISO);\n\n  // Vector\n  const rawVec = Array.isArray($json.vector) ? $json.vector : [];\n  const vecArr = rawVec.map(Number).filter(Number.isFinite);\n  const hasVector = vecArr.length > 0;\n  const vectorPart = hasVector ? `vector: [${vecArr.join(',')}]` : '';\n\n  // Limit\n  const limit =\n    Number.isFinite(Number($json.limit)) ? Number($json.limit)\n    : Number.isFinite(Number($json.topK)) ? Number($json.topK)\n    : 50;\n\n  // Sort als \"nieuwste\" gevraagd\n  const sortStr = wantNewest ? `sort: [{ path: [\"publishedAt\"], order: desc }]` : '';\n\n  // Search block: hybrid met vector óf BM25 fallback\n  const hybridBits = [\n    `query: \"${qRaw}\"`,\n    `alpha: ${alpha}`,\n    vectorPart,\n    `targetVectors: [\"te_3_large\"]`,\n    `properties: [\"title\",\"lead\",\"body\"]`\n  ].filter(Boolean).join('\\n        ');\n\n  const searchBlock = hasVector\n    ? `hybrid: {\\n        ${hybridBits}\\n      }`\n    : `bm25: { query: \"${qRaw}\" }`;\n\n  // GraphQL\n  return `\n  {\n    Get {\n      Article(\n        ${searchBlock}\n        ${whereClause}\n        ${sortStr}\n        limit: ${limit}\n      ) {\n        title\n        lead\n        body\n        publishedAt\n        _additional { distance id }\n      }\n    }\n  }`;\n})()\n"
+              "value": "={{ (() => {\n  // Inputs\n  const fromISO = $json.fromISO || null;\n  const toISO   = $json.toISO   || null;\n  const qRaw    = String($json.query ?? '').replace(/\\\"/g, '\\\\\"');\n\n  // Params\n  const alpha   = Number($json.alpha ?? 0.6);\n  const wantNewest = ($json.forceNewest === true) || String($json.forceNewest).toLowerCase() === 'true';\n\n  // WHERE\n  function buildWhere(fromISO, toISO) {\n    const ops = [];\n    if (fromISO) ops.push(`{ path: [\"publishedAt\"], operator: GreaterThanEqual, valueDate: \"${fromISO}\" }`);\n    if (toISO)   ops.push(`{ path: [\"publishedAt\"], operator: LessThan,        valueDate: \"${toISO}\" }`);\n    return ops.length ? `\n        where: {\n          operator: And\n          operands: [ ${ops.join(', ')} ]\n        }` : '';\n  }\n  const whereClause = buildWhere(fromISO, toISO);\n\n  // Vector\n  const rawVec = Array.isArray($json.vector) ? $json.vector : [];\n  const vecArr = rawVec.map(Number).filter(Number.isFinite);\n  const hasVector = vecArr.length > 0;\n  const vectorPart = hasVector ? `vector: [${vecArr.join(',')}]` : '';\n\n  // Limit\n  const limit =\n    Number.isFinite(Number($json.limit)) ? Number($json.limit)\n    : Number.isFinite(Number($json.topK)) ? Number($json.topK)\n    : 50;\n\n  // Sort als \"nieuwste\" gevraagd\n  const sortStr = wantNewest ? `sort: [{ path: [\"publishedAt\"], order: desc }]` : '';\n\n  // Search block: hybrid met vector óf BM25 fallback\n  const hybridBits = [\n    `query: \"${qRaw}\"`,\n    `alpha: ${alpha}`,\n    vectorPart,\n    `targetVectors: [\"te_3_large\"]`,\n    `properties: [\"title\",\"lead\",\"body\"]`\n  ].filter(Boolean).join('\\n        ');\n\n  const searchBlock = hasVector\n    ? `hybrid: {\\n        ${hybridBits}\\n      }`\n    : `bm25: { query: \"${qRaw}\" }`;\n\n  return `\n  {\n    Get {\n      Article(\n        ${searchBlock}\n        ${whereClause}\n        ${sortStr}\n        limit: ${limit}\n      ) {\n        title\n        lead\n        publishedAt\n        _additional { distance id }\n      }\n    }\n  }`;\n})() }}"
             }
           ]
         },
@@ -188,14 +188,14 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        880,
-        48
+        720,
+        128
       ],
-      "id": "48a2ceae-7868-45a4-a205-80f88e26d62e",
+      "id": "04ddc631-4864-44bb-91d1-048f525f144d",
       "name": "Weaviate Search",
       "credentials": {
         "httpBearerAuth": {
-          "id": "RJFpp0Wn31lAz0zR",
+          "id": "LPWEcJLCQxSFh1xs",
           "name": "Bearer Auth account"
         }
       }
@@ -274,11 +274,6 @@
         ]
       ]
     },
-    "Format Output": {
-      "main": [
-        []
-      ]
-    },
     "Weaviate Search": {
       "main": [
         [
@@ -295,11 +290,10 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "8d843b96-4d23-49d1-aaa1-0f7b94d1b5f0",
+  "versionId": "a44e7c87-a9c6-4451-a61d-4d2c53ca94ff",
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "3d6c34d8f4384ca25fa01e0f923a6457166bf650c040640922e8f719be8d8641"
+    "instanceId": "971bafcf224e032b5aa7287405a29d8a7b4ec50495a62e2829a5528993ff37ea"
   },
-  "id": "13IhSMkzb9YUf0PP",
+  "id": "QvH3aoTqLjbaHmBu",
   "tags": []
 }
