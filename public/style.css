@@ -97,18 +97,22 @@ body[data-theme="dark"] .logo {
   opacity: 0.9;
   background: none;
   border: none;
-  box-shadow: none;
   padding: 6px 2px;
   transition: color 0.2s ease, opacity 0.2s ease;
   margin-top: auto;
-  margin-bottom: 30px;
+  line-height: 1;
 }
+
+.new-chat svg path {
+  fill: currentColor;
+}
+
 .new-chat svg {
   width: 20px;
   height: 20px;
-  fill: var(--accent);
   flex-shrink: 0;
 }
+
 .new-chat:hover {
   opacity: 1;
   color: var(--accent);
@@ -197,6 +201,12 @@ body[data-theme="dark"] .logo {
 .hidden {
   display: none !important;
 }
+.mobile-header {
+  display: none;
+}
+.mobile-only {
+  display: none;
+}
 
 /* =========================
    CHATLOG
@@ -206,7 +216,7 @@ body[data-theme="dark"] .logo {
   width: 100%;
   max-width: var(--content);
   margin: 0 auto;
-  padding: 16px 0 96px;   /* was 16px 24px 90px — removed side padding */
+  padding: 72px 0 96px;   /* was 16px 24px 90px — removed side padding */
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -404,4 +414,96 @@ select {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================
+   MOBIEL LAYOUT
+   ========================= */
+@media (max-width: 768px) {
+
+  /* Sidebar volledig verbergen op mobiel */
+  .sidebar {
+    display: none;
+  }
+
+  /* Shell moet schermbreed worden */
+  .shell {
+    margin-left: 0;
+  }
+
+  /* Topbar mobiel layout */
+  .topbar {
+    left: 0;
+    height: 54px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Verberg desktop-onderdelen */
+  .title {
+    display: none;
+  }
+
+  #new-chat {
+    display: none;
+  }
+
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mobile-only {
+    display: flex;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-emg-logo {
+    display: block;
+    height: 26px;
+    width: auto;
+    content: url("./emglogo.png");
+    transition: opacity 0.3s ease;
+  }
+  body[data-theme="dark"] .mobile-emg-logo {
+    content: url("./emglogodm.png");
+  }
+
+  #mobile-new-chat svg {
+    stroke: var(--accent);  /* of var(--ink) als je zwart wilt */
+  }
+
+  .mobile-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: .3px;
+  }
+
+  /* Dropdown (instellingen icoon) blijft rechts via de bestaande .menu container */
+  .menu {
+    margin-left: auto;
+  }
+
+  /* Chatlog meer ruimte */
+  .chat-log {
+    padding-top: 70px;  /* ruimte voor mobiel topbar */
+    border-radius: 0;   /* optional: fullscreen look */
+    width: 100%;
+  }
+
+  /* Inputdock breder en hoger */
+  .dock {
+    left: 0;
+    padding: 14px 6px;
+  }
+
+  .dock-inner {
+    border-radius: 16px;
+    padding: 8px 12px;
+  }
 }

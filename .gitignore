@@ -17,4 +17,3 @@ docker-data/
 
 # --- Node ---
 n8n_data/
-nginx/

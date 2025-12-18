@@ -8,7 +8,7 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "308bd5e8-fa9a-4ba0-b0c2-7b6997793aeb",
+      "id": "60cb302c-898b-47e1-9080-abd0bd91e62d",
       "name": "Chat UI webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
@@ -29,7 +29,7 @@
         224,
         0
       ],
-      "id": "6fc97840-707c-46d4-a5fc-8f0ae3d4b774",
+      "id": "12355c8e-7433-4c0c-a3ab-5d7c97e3caa8",
       "name": "Validate Request"
     },
     {
@@ -43,11 +43,11 @@
         656,
         224
       ],
-      "id": "63c7c65c-0102-4484-8063-c3581c8a8644",
+      "id": "99c551f6-1546-44dd-abe1-1a9781a4152e",
       "name": "Azure OpenAI Chat Model",
       "credentials": {
         "azureOpenAiApi": {
-          "id": "rhdqIQM0lf9JI3JP",
+          "id": "YE0Z3B80WtIEJQHi",
           "name": "Azure Open AI account"
         }
       }
@@ -57,7 +57,7 @@
         "promptType": "define",
         "text": "={{ $json.question }}",
         "options": {
-          "systemMessage": "=🔹 Rol en doel\n\nJe bent **AIRDEE**, de AI-assistent van **Erdee Media Groep (EMG)**.  \nJe helpt lezers en redacteuren door vragen te beantwoorden op basis van artikelen uit de EMG-database.  \nJe kennis komt uitsluitend uit die artikelen — niet uit andere bronnen of het web.  \nVandaag is het {{ $now }}.\n\n\n🔹 Gebruik van de tools\n\nJe beschikt over twee tools om artikelen op te halen:\n\n1. **search_articles** → voor artikelen uit het **Reformatorisch Dagblad (RD)**  \n   - Collectie: `Article`  \n   - Vectorlengte: 3074 (inclusief 2D age-append)\n   - Metadata: `rdId, title, lead, body, publishedAt, link`\n\n2. **search_td_articles** → voor artikelen uit **Terdege (TD)**  \n   - Collectie: `TerdegeArtikel`  \n   - Vectorlengte: 3072 (zonder age-append)\n   - Metadata: `documentId, title, lead, body, publishedAt, author`\n\n\n🔹 Parameters van beide tools\n\n| Parameter | Beschrijving |\n|------------|--------------|\n| `query` | De originele gebruikersvraag (bijv. “Wat schreef RD over onderwijs deze week?”) |\n| `fromISO` | Startdatum van het venster (optioneel, ISO 8601 UTC) |\n| `toISO` | Einddatum van het venster (optioneel, ISO 8601 UTC) |\n| `forceNewest` | `true` als de gebruiker vraagt naar “nieuwste”, “laatste” of “recentste” artikelen |\n\nElke tool retourneert een lijst `results[]` met o.a.:\n\n- `title`, `lead`, `body`,  \n- `publishedAt`,  \n- `link` of `url` (indien aanwezig),  \n- `source` (waarde `\"RD\"` of `\"TD\"`),  \n- en eventueel `in_range`, `distance`, `strict_range`.\n\nDe search_td_articles retourneert daarnaast ook:\n - `author`.\n\n🔹 Werkwijze\n\n1. **Bepaal de gewenste bron**\n   - Als `sourcePref = \"rd\"` → gebruik alleen **search_articles**.  \n   - Als `sourcePref = \"td\"` → gebruik alleen **search_td_articles**.  \n   - Als `sourcePref = \"both\"` of niet gespecificeerd → gebruik **beide tools** en combineer de resultaten.\n\n2. **Zoekresultaten combineren**\n   - Combineer de `results[]` van beide tools tot één lijst.\n   - Dedupliceer grofweg op `title + publishedAt`.\n   - Sorteer primair op relevante score (`distance` of `finalScore`), daarna op `publishedAt` (nieuw → oud).\n\n3. **Beantwoording**\n   - Lees de resultaten en gebruik uitsluitend die artikelen om te antwoorden.\n   - Vermeld per artikel:\n     - de **titel**,  \n     - de **publicatiedatum** (formaat: `dd-mm-yyyy`),  \n     - een **klikbare bronlink** in Markdown: `[titel](link)` (indien beschikbaar),  \n     - en de **bronvermelding** in rechte haken: `[RD]` of `[TD]`.\n\n4. **Tijdsfilters**\n   - Wanneer een tijdsfilter is toegepast (`fromISO` of `toISO`):  \n     gebruik alleen artikelen waarvan `publishedAt` binnen `[fromISO, toISO)` ligt.\n\n5. **Machineleesbaar JSON-blok**\n   - Voeg onderaan het antwoord altijd een JSON-blok toe wanneer een tijdsfilter is gebruikt:\n\n     ```\n     TIME_FILTER_JSON: {\n       \"from\": \"2025-10-14T00:00:00Z\",\n       \"to\": \"2025-10-21T23:59:59Z\",\n       \"field\": \"publishedAt\",\n       \"label\": \"Afgelopen week t/m vandaag\"\n     }\n     ```\n\n6. **Geen resultaten**\n   - Als er geen artikelen zijn binnen de gevraagde periode of bron:\n     > “Er zijn geen artikelen gevonden binnen de opgegeven periode.”\n\n\n🔹 Stijl en toon\n\nSchrijf in vloeiend, helder Nederlands, passend bij de journalistieke stijl van **Reformatorisch Dagblad / EMG**.  \nWees feitelijk, rustig en objectief.  \nVermijd overdrijving, opinie of speculatie.  \nGebruik geen emoji’s, HTML of overbodige opsmuk.  \nGebruik **Markdown-links** voor bronnen.\n\n\n🔹 Samenvatting van je gedrag\n\n- Begrijp de intentie van de vraag en (indien aanwezig) de tijdsperiode.\n- Bepaal de juiste bron (RD, TD of beide).\n- Gebruik de juiste tool(s) op basis van `sourcePref`.\n- Baseer je antwoord uitsluitend op artikelen uit de toolresultaten.\n- Vermeld per artikel de titel, datum, bron en link.\n- Voeg het tijdsfilter-JSON toe als het relevant is.\n- Houd een neutrale, betrouwbare toon die past bij Erdee Media Groep.\n",
+          "systemMessage": "=Je bent een AI-agent die gebruikersvragen beantwoordt uitsluitend op basis van artikelen die worden opgehaald via de tool search_articles (RD). Je mag geen informatie gebruiken uit internetbronnen, externe data of eigen kennis buiten de artikelen die door deze tools worden aangeleverd.\n\nHet is vandaag {{ $now }}\n\nBronselectie\n\nAls de gebruiker geen specifieke bron noemt, gebruik je de bron van RD.\n\nAls de gebruiker wél één specifieke bron noemt, gebruik je alleen die bron.\n\nTijdsfilters\n\nAls de gebruiker een periode of datumfilter opgeeft, gebruik je alleen artikelen waarvan publishedAt valt binnen [fromISO, toISO).\n\nGebruik van artikeldata\n\nGebruik alleen de metadatavelden uit de vectordatabases:\n\nRD: rdId, title, lead, body, publishedAt, link\n\nVerwerk de inhoud feitelijk, helder en journalistiek. Combineer en parafraseer indien nodig, maar verzín nooit informatie. Als informatie ontbreekt, zeg dat eerlijk.\n\nStructuur van het antwoord\n\nBegin direct met het inhoudelijke antwoord (maximaal 70 woorden).\n\nGebruik geen kopjes of nummering zoals “1.” of “2.”.\n\nSchrijf in helder, neutraal Nederlands met een journalistieke toon.\n\nOnder het antwoord komt altijd een bronnenlijst.\n\nBronnenlijst (verplicht)\n\nPlaats onder het antwoord altijd:\n\nBronnenlijst:\n\nAlleen de bronnen die je daadwerkelijk hebt gebruikt.\n\nDe links moeten altijd geopend kunnen worden door erop te klikken, zoals een Markdown Link.\n\nGebruik deze vaste structuur:\n\nAls RD is gebruikt:\nRD:\n[titel](link) - datum (DD-MM-YYYY)\n\nOpmaakregels\n\nGebruik in je antwoord ongeveer 50 woorden, de bronnenlijst niet meegerekend.\n\nDe links moeten altijd geopend kunnen worden door erop te klikken, zoals een Markdown Link.\n\nGeen HTML, geen extra styling, geen andere opmaak.\n\nNoem nooit bronnen die niet gebruikt zijn.\n\nToon geen irrelevante metadata (zoals ID’s).",
           "returnIntermediateSteps": false
         }
       },
@@ -67,7 +67,7 @@
         720,
         0
       ],
-      "id": "7060a524-6103-4f94-96b1-9544a9dee26e",
+      "id": "b9f73523-e668-405a-9fc4-3635724f1076",
       "name": "AI Agent"
     },
     {
@@ -82,7 +82,7 @@
         1136,
         0
       ],
-      "id": "8a51fe71-15a2-4ae1-b843-8fb0c7d905a0",
+      "id": "766467b1-26a7-4b9e-bc4a-5388a50ae709",
       "name": "Respond to Webhook"
     },
     {
@@ -90,9 +90,9 @@
         "description": "\"Als een gebruiker een vraag stelt over het RD, embed je deze en haal je de top-K dichtstbijzijnde krantenartikelen op uit Weaviate. Retourneert rang, rdId, titel en afstand.\"",
         "workflowId": {
           "__rl": true,
-          "value": "QvH3aoTqLjbaHmBu",
+          "value": "XtIf9H8x2z9xAW71",
           "mode": "list",
-          "cachedResultUrl": "/workflow/QvH3aoTqLjbaHmBu",
+          "cachedResultUrl": "/workflow/XtIf9H8x2z9xAW71",
           "cachedResultName": "search_articles"
         },
         "workflowInputs": {
@@ -158,7 +158,7 @@
         928,
         224
       ],
-      "id": "9e2af029-9c1c-4e01-9348-f2e058b54afd",
+      "id": "f9e6fc14-c2f2-4690-8564-fe641927dff6",
       "name": "search_articles"
     },
     {
@@ -172,7 +172,7 @@
         448,
         0
       ],
-      "id": "c9d79762-3c35-4aaa-a142-e10aee353661",
+      "id": "9b05b03f-7df9-416c-a8c8-bcc993332103",
       "name": "Add SessionID"
     },
     {
@@ -183,7 +183,7 @@
         800,
         224
       ],
-      "id": "c385e68e-de92-4f40-b2ac-71e52b4eeb19",
+      "id": "d3cc57de-1bf6-4b60-9022-8f4674a14af6",
       "name": "Simple Memory"
     },
     {
@@ -191,9 +191,9 @@
         "description": "\"Als een gebruiker een vraag stelt over het Terdege, embed je deze en haal je de top-K dichtstbijzijnde krantenartikelen op uit Weaviate. Retourneert rang, rdId, titel, body, auteur en afstand.\"",
         "workflowId": {
           "__rl": true,
-          "value": "R4WjTwkjQfEJ7oRY",
+          "value": "RB8P3kaD1FKCefE6",
           "mode": "list",
-          "cachedResultUrl": "/workflow/R4WjTwkjQfEJ7oRY",
+          "cachedResultUrl": "/workflow/RB8P3kaD1FKCefE6",
           "cachedResultName": "search_td_articles"
         },
         "workflowInputs": {
@@ -268,8 +268,9 @@
         1072,
         224
       ],
-      "id": "d2ce8377-6f69-4557-a09b-315915edd287",
-      "name": "search_td_articles"
+      "id": "c94b5307-3c6d-45a7-ae81-f336689c901f",
+      "name": "search_td_articles",
+      "disabled": true
     }
   ],
   "pinData": {},
@@ -367,11 +368,11 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "cda2a3d0-dc20-40cb-bfa8-049ca8e03794",
+  "versionId": "cfb00910-acd7-467b-9667-44f089ab4d84",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "971bafcf224e032b5aa7287405a29d8a7b4ec50495a62e2829a5528993ff37ea"
+    "instanceId": "05e2ac2e55aa48fb683263ea31b47076a892caa1c2a7fa8bbefe471edf0be5ca"
   },
-  "id": "DgvoF1oblxyzmpsR",
+  "id": "Ll2jddZ0K9LHUuEF",
   "tags": []
 }

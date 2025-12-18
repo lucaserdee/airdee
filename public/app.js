@@ -4,12 +4,38 @@ const input = document.getElementById("question");
 const sendBtn = document.getElementById("send-btn");
 const chatLog = document.getElementById("chat-log");
 const newChat = document.getElementById("new-chat");
+const mobileNewChat = document.getElementById("mobile-new-chat");
 const menuBtn = document.getElementById("menu-btn");
 const dropdown = document.getElementById("dropdown");
 const settingsBtn = document.getElementById("open-settings");
 const settingsModal = document.getElementById("settings-modal");
 const closeSettings = document.getElementById("close-settings");
 const themeSelect = document.getElementById("theme-select");
+const emgLogo = document.getElementById("emg-logo");
+
+// ====================================
+// 1. EMG LOGO → maak klikbaar (desktop + mobiel)
+// ====================================
+if (emgLogo) {
+  emgLogo.addEventListener("click", () => {
+    window.location.href = "https://www.emg.nl";   // Pas de URL aan indien nodig
+  });
+}
+
+// ====================================
+// 2. Voeg het ChatGPT-stijl nieuwe-chat icoontje toe
+// ====================================
+if (newChat) {
+  newChat.innerHTML = `
+    <span class="newchat-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/>
+        <path d="M8 16l1-4 7-7 3 3-7 7-4 1z" stroke="currentColor" stroke-width="2" fill="none"/>
+      </svg>
+    </span>
+    <span>Nieuwe chat</span>
+  `;
+}
 
 // ===== Thema instellen =====
 function applyTheme(theme) {
@@ -41,12 +67,24 @@ settingsModal.addEventListener("click", (e) => {
 });
 themeSelect?.addEventListener("change", (e) => applyTheme(e.target.value));
 
-// ===== Nieuwe chat =====
-newChat.addEventListener("click", () => {
+// ====================================
+// 3. Nieuwe chat werkend maken (ook op mobiel)
+// ====================================
+function resetChat() {
   chatLog.innerHTML = "";
   input.value = "";
   sendBtn.disabled = true;
   sendBtn.classList.remove("enabled");
+}
+
+newChat?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  resetChat();
+});
+
+mobileNewChat?.addEventListener("click", () => {
+  resetChat();
 });
 
 // ===== Input enable/disable send knop =====
@@ -64,40 +102,38 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;");
 }
 
-// - Markdown linkjes [titel](url)
-// - Kale url's
-// - Lege regel → nieuwe paragraaf
-// - Regels die beginnen met "- " → lijstitems
 function renderMessageHtml(text) {
   let t = String(text ?? "");
-  // normaliseer CRLF
   t = t.replace(/\r\n/g, "\n");
 
-  // mark down links
-  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, a, url) =>
-    `<a href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(a)}</a>`
+  // Escape eerst alle HTML behalve voor links
+  function esc(s) {
+    return s.replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+  }
+
+  t = esc(t);
+
+  // 1️⃣ Markdown formaat: [titel](url)
+  t = t.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    `<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>`
   );
 
-  // autolink kale urls
-  t = t.replace(/(^|[\s(])((https?:\/\/[^\s<)]+))/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
-
-  // splits op dubbele newline in paragrafen of lijsten
-  const blocks = t.split(/\n{2,}/).map(block => {
-    // lijst?
-    if (/^\s*[-•]\s+/m.test(block)) {
-      const items = block
-        .split(/\n/)
-        .filter(line => /^\s*[-•]\s+/.test(line))
-        .map(line => `<li>${escapeHtml(line.replace(/^\s*[-•]\s+/, ""))}</li>`)
-        .join("");
-      return `<ul>${items}</ul>`;
+  t = t.replace(
+    /([^()\n]+)\s*\((https?:\/\/[^\s)]+)\)/g,
+    (m, title, url) => {
+      const cleanTitle = title.trim();
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${cleanTitle}</a>`;
     }
-    // gewone paragraaf: behoud enkelvoudige nieuwe regels als <br>
-    const safe = escapeHtml(block).replace(/\n/g, "<br>");
-    return `<p>${safe}</p>`;
-  });
+  );
 
-  // extra: zorg voor visuele scheiding tussen bronnen door lege regels te bewaren
+  // Paragrafen + linebreaks
+  const blocks = t.split(/\n{2,}/).map(block =>
+    `<p>${block.replace(/\n/g, "<br>")}</p>`
+  );
+
   return blocks.join("\n");
 }
 
@@ -113,7 +149,6 @@ function addMessage(role, text) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-// Loader
 function showLoader() {
   const div = document.createElement("div");
   div.id = "loader";
@@ -140,8 +175,7 @@ form.addEventListener("submit", async (e) => {
   showLoader();
 
   try {
-    // LET OP: pas de endpoint aan indien nodig
-    const resp = await fetch("http://172.28.128.188:5678/webhook/ai-chatbot", {
+    const resp = await fetch("https://airdee.erdee.nl/webhook/ai-chatbot", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question })
